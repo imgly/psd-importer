@@ -1,4 +1,5 @@
 // @ts-ignore
+import opentype from "opentype.js";
 import type CreativeEngine from "@cesdk/engine";
 import {
   BlendMode,
@@ -18,17 +19,16 @@ import {
   PathRecord,
   TypeToolObjectSettingAliBlock,
 } from "@webtoon/psd/dist/interfaces";
-import opentype from "opentype.js";
-import { parseColor } from "./color";
 import type { TypefaceParams, TypefaceResolver } from "./font-resolver";
 import defaultFontResolver from "./font-resolver";
 import { EncodeBufferToPNG } from "./image-encoder";
 import {
-  PartialLayerFrame,
   TextProperties,
+  VectorNumberTypeItem,
   VectorObjectTypeItem,
   VectorPathRecordItem,
   VectorUnitTypeItem,
+  PartialLayerFrame,
 } from "./interfaces";
 import { Logger } from "./logger";
 import {
@@ -37,6 +37,7 @@ import {
   waitUntilBlockIsReady,
   webtoonToCesdkBlendMode,
 } from "./utils";
+import { parseColor } from "./color";
 
 /**
  * The pixel scale factor used in the CESDK Editor
@@ -1243,7 +1244,12 @@ export class PSDParser {
     if (SoCo) {
       const clr_ = SoCo.data.items.get("Clr ") as VectorObjectTypeItem;
       const { r, g, b } = parseColor(clr_) ?? { r: 0, g: 0, b: 0 };
-      bgColor = { r, g, b, a: 1 };
+      bgColor = {
+        r: r * 255,
+        g: g * 255,
+        b: b * 255,
+        a: 255,
+      };
     }
 
     const imgBlob = await this.encodeBufferToPNG(
@@ -1349,9 +1355,9 @@ export class PSDParser {
     // shared values between vmsk and (vscg, vsms, vstk)
     let pathRecords: PathRecord[] = [];
     let color: RGBAColor = {
-      r: 0 / 255.0,
-      g: 0 / 255.0,
-      b: 0 / 255.0,
+      r: 0,
+      g: 0,
+      b: 0,
       a: psdLayer.opacity / 255.0,
     };
 
@@ -1369,7 +1375,12 @@ export class PSDParser {
       if (SoCo) {
         const clr_ = SoCo.data.items.get("Clr ") as VectorObjectTypeItem;
         const { r, g, b } = parseColor(clr_) ?? { r: 0, g: 0, b: 0 };
-        bgColor = { r, g, b, a: 1 };
+        bgColor = {
+          r: r * 255,
+          g: g * 255,
+          b: b * 255,
+          a: 255,
+        };
       }
 
       const imgBlob = await this.encodeBufferToPNG(
@@ -1397,8 +1408,13 @@ export class PSDParser {
       const clr_ = vscg.data.descriptor.items.get(
         "Clr "
       ) as VectorObjectTypeItem;
-      const { r, g, b } = parseColor(clr_) ?? { r: 0, g: 0, b: 0 };
-      color = { r, g, b, a: 1 };
+      const red = clr_.descriptor.items.get("Rd  ") as VectorNumberTypeItem;
+      const green = clr_.descriptor.items.get("Grn ") as VectorNumberTypeItem;
+      const blue = clr_.descriptor.items.get("Bl  ") as VectorNumberTypeItem;
+      color.r = red.value / 255.0;
+      color.g = green.value / 255.0;
+      color.b = blue.value / 255.0;
+      color.a = 1;
 
       if (psdLayer.additionalProperties.vsms) {
         // handling vector mask setting
@@ -1465,10 +1481,31 @@ export class PSDParser {
         "strokeStyleContent"
       ) as VectorObjectTypeItem;
       // get vector stroke color
-      const color = strokeStyle.descriptor.items.get(
+      const clr__ = strokeStyle.descriptor.items.get(
         "Clr "
       ) as VectorObjectTypeItem;
-      const { r, g, b } = parseColor(color) ?? { r: 0, g: 0, b: 0 };
+      const redItem = clr__.descriptor.items.get(
+        "Rd  "
+      ) as VectorNumberTypeItem;
+      const greenItem = clr__.descriptor.items.get(
+        "Grn "
+      ) as VectorNumberTypeItem;
+      const blueItem = clr__.descriptor.items.get(
+        "Bl  "
+      ) as VectorNumberTypeItem;
+      let r = 1;
+      let g = 1;
+      let b = 1;
+      if (redItem && greenItem && blueItem) {
+        r = redItem.value / 255.0;
+        g = greenItem.value / 255.0;
+        b = blueItem.value / 255.0;
+      } else {
+        this.logger.log(
+          "Vector stroke color not found for the vector stroke",
+          "warning"
+        );
+      }
       // set vector stroke data
       this.engine.block.setStrokeEnabled(graphicBlock, true);
       this.engine.block.setStrokeWidth(
