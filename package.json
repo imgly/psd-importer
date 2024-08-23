@@ -1,0 +1,74 @@
+{
+  "name": "@imgly/psd-importer",
+  "version": "0.0.1-rc.2",
+  "module": "dist/browser.js",
+  "types": "dist/browser.d.ts",
+  "type": "module",
+  "description": "Import PSD files into the Creative Editor Ecosystem",
+  "keywords": [
+    "creative-editor-sdk",
+    "Photoshop",
+    "import",
+    "psd"
+  ],
+  "author": {
+    "name": "IMG.LY GmbH",
+    "email": "support@img.ly",
+    "url": "https://img.ly"
+  },
+  "bugs": {
+    "email": "support@img.ly"
+  },
+  "homepage": "https://img.ly/showcases/cesdk/photoshop-template-import/web",
+  "devDependencies": {
+    "@cesdk/engine": "^1.30.0",
+    "@cesdk/node": "^1.30.0",
+    "@types/chai": "^4.3.14",
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.12.7",
+    "@types/pngjs": "^6.0.5",
+    "chai": "^5.1.0",
+    "dotenv": "^16.4.5",
+    "dts-bundle-generator": "^9.5.1",
+    "esbuild": "^0.20.2",
+    "mocha": "^10.4.0",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.7.3"
+  },
+  "peerDependencies": {
+    "@cesdk/engine": "^1.30.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "LICENSE.md",
+    "README.md",
+    "dist/",
+    "dist/assets/"
+  ],
+  "scripts": {
+    "download-example-files": "gsutil -m cp -r \"gs://psd-importer-customer-samples/\" ./src/test/examples",
+    "prepare-example-files": "./scripts/prepare-files.sh test/examples",
+    "build": "cp -r ./assets dist/ && tsx build.ts",
+    "test": "mocha",
+    "publish": "npm run build && npm publish --access public",
+    "compare": "tsx scripts/comparison.ts"
+  },
+  "dependencies": {
+    "@webtoon/psd": "^0.4.0",
+    "opentype.js": "^1.3.4",
+    "pixelmatch": "^6.0.0"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/browser.d.ts",
+        "default": "./dist/browser.js"
+      },
+      "require": {
+        "types": "./dist/browser.d.ts",
+        "default": "./dist/browser.js"
+      }
+    }
+  }
+}
