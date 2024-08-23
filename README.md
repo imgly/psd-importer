@@ -170,3 +170,7 @@ List of blend modes not currently supported by the engine:
 - HardMix
 - Subtract
 - Divide
+
+## License
+
+The software is free for use under the AGPL License.
