@@ -901,13 +901,10 @@ export class PSDParser {
 
     // Set height to auto to allow natural text flow
     this.engine.block.setHeightMode(textBlock, "Auto");
-    let frameHeight = this.engine.block.getFrameHeight(textBlock);
     const originalLetterSpacing = this.engine.block.getFloat(
       textBlock,
       "text/letterSpacing"
     );
-
-    let perfectFitLetterSpacing: number | null = null;
 
     const fontSize = this.engine.block.getFloat(textBlock, "text/fontSize");
     const fontSizeInDesignUnit = this.fontSizeToInches(fontSize);
@@ -940,7 +937,6 @@ export class PSDParser {
       );
       const overflowingAfter = isOverflowing(textBlock, realTextBlockHeight);
       if (overflowingNow && !overflowingAfter) {
-        perfectFitLetterSpacing = currentLetterSpacing;
         return true;
       } else {
         return false;
@@ -965,7 +961,7 @@ export class PSDParser {
       counter++;
       const perfectFit = isPerfectFit(block, originalHeight);
       if (perfectFit) {
-        return perfectFitLetterSpacing!;
+        return this.engine.block.getFloat(block, "text/letterSpacing");
       }
       // If we did not find a perfect fit, we need to search for it
       // We test the middle of the current range
@@ -997,9 +993,12 @@ export class PSDParser {
     );
     // if we did not find a perfect fit, reset the letter spacing
     if (!realLetterSpacing) {
-      const name = this.engine.block.getName(textBlock);
+      const content = this.engine.block.getString(textBlock, "text/text");
       this.logger.log(
-        `Could not find a perfect fit for the text block with name ${name}`,
+        `Could not find a perfect fit for the text block with text "${content.slice(
+          0,
+          10
+        )}..."`,
         "warning"
       );
       this.engine.block.setFloat(
