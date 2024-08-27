@@ -31,7 +31,7 @@ interface FontResolverResult {
 }
 
 function buildUnpkgAssetPath(assetPath: string) {
-  return `https://unpkg.com/@imgly/idml-importer@${version}/dist/assets/${assetPath}`;
+  return `https://unpkg.com/@imgly/psd-importer@${version}/dist/assets/${assetPath}`;
 }
 
 export type ContentJSON = {
@@ -40,10 +40,9 @@ export type ContentJSON = {
   assets: AssetDefinition[];
 };
 
-async function fetchGoogleFonts(url?: string): Promise<ContentJSON> {
-  return fetch(url ?? buildUnpkgAssetPath("google-fonts/content.json")).then(
-    (res) => res.json()
-  );
+async function fetchGoogleFonts(customUrl?: string): Promise<ContentJSON> {
+  const url = customUrl ?? buildUnpkgAssetPath("google-fonts/content.json");
+  return fetch(url).then((res) => res.json());
 }
 
 let assetsPromise: Promise<ContentJSON>;

@@ -46,10 +46,7 @@ const processPsdFiles = async (heatmap: boolean = true) => {
     license: process.env.CESDK_LICENSE,
   });
   // add fonts
-  await addGoogleFontsAssetLibrary(
-    engine as any,
-    "https://unpkg.com/@imgly/idml-importer@1.0.6/dist/assets/google-fonts/content.json"
-  );
+  await addGoogleFontsAssetLibrary(engine as any);
 
   for (const folder of folders) {
     if (folder === "output") continue;
