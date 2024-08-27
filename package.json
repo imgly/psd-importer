@@ -34,7 +34,8 @@
     "esbuild": "^0.20.2",
     "mocha": "^10.4.0",
     "pngjs": "^7.0.0",
-    "tsx": "^4.7.3"
+    "tsx": "^4.7.3",
+    "pixelmatch": "^6.0.0"
   },
   "peerDependencies": {
     "@cesdk/engine": "^1.30.0",
@@ -56,8 +57,7 @@
   },
   "dependencies": {
     "@webtoon/psd": "^0.4.0",
-    "opentype.js": "^1.3.4",
-    "pixelmatch": "^6.0.0"
+    "opentype.js": "^1.3.4"
   },
   "exports": {
     ".": {
