@@ -31,7 +31,7 @@ interface FontResolverResult {
 }
 
 function buildUnpkgAssetPath(assetPath: string) {
-  return `https://unpkg.com/@imgly/psd-importer@${version}/dist/assets/${assetPath}`;
+  return `https://unpkg.com/@imgly/psd-importer@${version}/dist/${assetPath}`;
 }
 
 export type ContentJSON = {
