@@ -1,5 +1,4 @@
 // @ts-ignore
-import opentype from "opentype.js";
 import type CreativeEngine from "@cesdk/engine";
 import {
   BlendMode,
@@ -19,25 +18,21 @@ import {
   PathRecord,
   TypeToolObjectSettingAliBlock,
 } from "@webtoon/psd/dist/interfaces";
+import opentype from "opentype.js";
+import { parseColor } from "./color";
 import type { TypefaceParams, TypefaceResolver } from "./font-resolver";
 import defaultFontResolver from "./font-resolver";
 import { EncodeBufferToPNG } from "./image-encoder";
 import {
+  PartialLayerFrame,
   TextProperties,
   VectorNumberTypeItem,
   VectorObjectTypeItem,
   VectorPathRecordItem,
   VectorUnitTypeItem,
-  PartialLayerFrame,
 } from "./interfaces";
 import { Logger } from "./logger";
-import {
-  getDesignUnit,
-  getScaleFactor,
-  waitUntilBlockIsReady,
-  webtoonToCesdkBlendMode,
-} from "./utils";
-import { parseColor } from "./color";
+import { waitUntilBlockIsReady, webtoonToCesdkBlendMode } from "./utils";
 
 /**
  * The pixel scale factor used in the CESDK Editor
@@ -106,7 +101,6 @@ export class PSDParser {
     this.stack = 0;
     this.width = 0;
     this.height = 0;
-    this.scaleFactor = DEFAULT_PIXEL_SCALE_FACTOR;
     this.page = 0;
     this.psd = psd;
     this.fontResolver = options.fontResolver ?? defaultFontResolver;
@@ -264,8 +258,8 @@ export class PSDParser {
 
     const height = this.height;
     const width = this.width;
-    this.engine.block.setWidth(graphicBlock, width / this.scaleFactor);
-    this.engine.block.setHeight(graphicBlock, height / this.scaleFactor);
+    this.engine.block.setWidth(graphicBlock, width);
+    this.engine.block.setHeight(graphicBlock, height);
     // process path records
     let svgPath = this.buildShapeFromPathRecords(
       mask!.pathRecords,
@@ -275,16 +269,8 @@ export class PSDParser {
 
     // set the vector path's path data, width, and height
     this.engine.block.setString(shape, "vector_path/path", svgPath);
-    this.engine.block.setFloat(
-      shape,
-      "vector_path/width",
-      width / this.scaleFactor
-    );
-    this.engine.block.setFloat(
-      shape,
-      "vector_path/height",
-      height / this.scaleFactor
-    );
+    this.engine.block.setFloat(shape, "vector_path/width", width);
+    this.engine.block.setFloat(shape, "vector_path/height", height);
     // append child to the page
     this.engine.block.appendChild(this.page, graphicBlock);
     return graphicBlock;
@@ -315,9 +301,6 @@ export class PSDParser {
     this.width = this.psd.width;
     this.height = this.psd.height;
 
-    // set scaling factor
-    this.scaleFactor = getScaleFactor(this.psd);
-
     await this.initScene();
 
     await this.createPage(this.stack);
@@ -345,24 +328,21 @@ export class PSDParser {
     this.engine.block.setFloat(this.stack, "stack/spacing", 35);
     this.engine.block.setBool(this.stack, "stack/spacingInScreenspace", true);
 
-    const designUnit = getDesignUnit(this.psd);
     // set page format custom:
     this.engine.block.setString(this.scene, "scene/pageFormatId", "Custom");
-    this.engine.scene.setDesignUnit(designUnit);
-    this.engine.block.setFloat(
-      this.scene,
-      "scene/pixelScaleFactor",
-      this.scaleFactor
-    );
+    // psd always uses pixels as design unit for its dimensions
+    this.engine.scene.setDesignUnit("Pixel");
+    // set dpi to 72 since psd uses 72 dpi to size its texts
+    this.engine.block.setFloat(this.scene, "scene/dpi", 72);
     this.engine.block.setFloat(
       this.scene,
       "scene/pageDimensions/width",
-      this.width / this.scaleFactor
+      this.width
     );
     this.engine.block.setFloat(
       this.scene,
       "scene/pageDimensions/height",
-      this.height / this.scaleFactor
+      this.height
     );
   }
 
@@ -372,8 +352,8 @@ export class PSDParser {
 
     // set the page name, width, and height
     this.engine.block.setName(pageBlock, this.psd.name);
-    this.engine.block.setWidth(pageBlock, this.width / this.scaleFactor);
-    this.engine.block.setHeight(pageBlock, this.height / this.scaleFactor);
+    this.engine.block.setWidth(pageBlock, this.width);
+    this.engine.block.setHeight(pageBlock, this.height);
     this.engine.block.setClipped(pageBlock, true);
 
     // disable the default page fill color
@@ -495,10 +475,10 @@ export class PSDParser {
     }
 
     // convert the text frame's dimensions from points to the CESDK design unit
-    let x = psdLayer.left / this.scaleFactor;
-    let y = psdLayer.top / this.scaleFactor;
-    let width = psdLayer.width / this.scaleFactor;
-    let height = psdLayer.height / this.scaleFactor;
+    let x = psdLayer.left;
+    let y = psdLayer.top;
+    let width = psdLayer.width;
+    let height = psdLayer.height;
 
     const TySh = psdLayer.additionalProperties.TySh;
     if (TySh) {
@@ -520,8 +500,7 @@ export class PSDParser {
       function applyTransform(
         x: number,
         y: number,
-        transform: TypeToolObjectSettingAliBlock,
-        scaleFactor: number
+        transform: TypeToolObjectSettingAliBlock
       ): { x: number; y: number } {
         const newX =
           transform.transformXX * x +
@@ -533,12 +512,12 @@ export class PSDParser {
           -transform.transformYX * x +
           transform.transformYY * y +
           transform.transformTY;
-        return { x: newX / scaleFactor, y: newY / scaleFactor };
+        return { x: newX, y: newY };
       }
 
-      const topLeft = applyTransform(left, top, TySh, this.scaleFactor);
-      const topRight = applyTransform(right, top, TySh, this.scaleFactor);
-      const bottomLeft = applyTransform(left, bottom, TySh, this.scaleFactor);
+      const topLeft = applyTransform(left, top, TySh, 1);
+      const topRight = applyTransform(right, top, TySh, 1);
+      const bottomLeft = applyTransform(left, bottom, TySh, 1);
 
       x = topLeft.x;
       y = topLeft.y;
@@ -720,8 +699,7 @@ export class PSDParser {
         ?.FontSize;
     const textFontSize = this.scaleTextNumber(
       textFontSizeAttribute,
-      psdLayer.additionalProperties.TySh ?? null,
-      this.scaleFactor
+      psdLayer.additionalProperties.TySh ?? null
     );
     this.engine.block.setFloat(textBlock, "text/fontSize", textFontSize);
 
@@ -767,10 +745,7 @@ export class PSDParser {
             ?.StyleSheetData.OutlineWidth
         : 1;
       this.engine.block.setStrokeEnabled(textBlock, true);
-      this.engine.block.setStrokeWidth(
-        textBlock,
-        outlineWidth / this.scaleFactor
-      );
+      this.engine.block.setStrokeWidth(textBlock, outlineWidth);
       this.engine.block.setStrokeColor(textBlock, {
         r: textStrokeColor.r / 255.0,
         g: textStrokeColor.g / 255.0,
@@ -788,7 +763,7 @@ export class PSDParser {
     this.engine.block.setFloat(
       textBlock,
       "text/letterSpacing",
-      totalLetterSpacing / 6 / this.scaleFactor
+      totalLetterSpacing / 6
     );
 
     // set line height
@@ -1273,10 +1248,10 @@ export class PSDParser {
     this.engine.block.insertChild(pageBlock, imageBlock, 0);
 
     // convert the image frame's dimensions from points to the CESDK design unit
-    const x = psdLayer.left / this.scaleFactor;
-    const y = psdLayer.top / this.scaleFactor;
-    const width = psdLayer.width / this.scaleFactor;
-    const height = psdLayer.height / this.scaleFactor;
+    const x = psdLayer.left;
+    const y = psdLayer.top;
+    const width = psdLayer.width;
+    const height = psdLayer.height;
 
     // set blend mode
     const blendMode = this.getBlendMode(psdLayer);
@@ -1301,8 +1276,8 @@ export class PSDParser {
     w: number,
     h: number
   ): string {
-    const aHoriz = (record.anchor.horiz * w) / this.scaleFactor;
-    const aVert = (record.anchor.vert * h) / this.scaleFactor;
+    const aHoriz = record.anchor.horiz * w;
+    const aVert = record.anchor.vert * h;
     return `M ${aHoriz},${aVert} `;
   }
 
@@ -1312,12 +1287,12 @@ export class PSDParser {
     w: number,
     h: number
   ): string {
-    const pHoriz = (previous.leaving.horiz * w) / this.scaleFactor;
-    const pVert = (previous.leaving.vert * h) / this.scaleFactor;
-    const aHoriz = (current.anchor.horiz * w) / this.scaleFactor;
-    const aVert = (current.anchor.vert * h) / this.scaleFactor;
-    const lHoriz = (current.preceding.horiz * w) / this.scaleFactor;
-    const lVert = (current.preceding.vert * h) / this.scaleFactor;
+    const pHoriz = previous.leaving.horiz * w;
+    const pVert = previous.leaving.vert * h;
+    const aHoriz = current.anchor.horiz * w;
+    const aVert = current.anchor.vert * h;
+    const lHoriz = current.preceding.horiz * w;
+    const lVert = current.preceding.vert * h;
     return `C ${pHoriz},${pVert} ${lHoriz},${lVert} ${aHoriz},${aVert} `;
   }
 
@@ -1330,8 +1305,8 @@ export class PSDParser {
     // must be the size of the whole image
     const x = 0;
     const y = 0;
-    const width = this.width / this.scaleFactor;
-    const height = this.height / this.scaleFactor;
+    const width = this.width;
+    const height = this.height;
 
     // set blend mode
     const blendMode = this.getBlendMode(psdLayer);
@@ -1445,16 +1420,8 @@ export class PSDParser {
 
     // set the vector path's path data, width, and height
     this.engine.block.setString(shape, "vector_path/path", svgPath);
-    this.engine.block.setFloat(
-      shape,
-      "vector_path/width",
-      psdLayer.width / this.scaleFactor
-    );
-    this.engine.block.setFloat(
-      shape,
-      "vector_path/height",
-      psdLayer.height / this.scaleFactor
-    );
+    this.engine.block.setFloat(shape, "vector_path/width", psdLayer.width);
+    this.engine.block.setFloat(shape, "vector_path/height", psdLayer.height);
 
     const gradient = psdLayer.additionalProperties.GdFl;
     if (gradient) {
@@ -1507,10 +1474,7 @@ export class PSDParser {
       }
       // set vector stroke data
       this.engine.block.setStrokeEnabled(graphicBlock, true);
-      this.engine.block.setStrokeWidth(
-        graphicBlock,
-        strokeWidth.value / this.scaleFactor
-      );
+      this.engine.block.setStrokeWidth(graphicBlock, strokeWidth.value);
       this.engine.block.setStrokeColor(graphicBlock, {
         r,
         g,
