@@ -26,6 +26,7 @@ import { EncodeBufferToPNG } from "./image-encoder";
 import {
   PartialLayerFrame,
   TextProperties,
+  VectorBooleanTypeItem,
   VectorNumberTypeItem,
   VectorObjectTypeItem,
   VectorPathRecordItem,
@@ -661,9 +662,9 @@ export class PSDParser {
         // "3": "Justified", // Justified is not supported in CE.SDK
       };
       const justificationValue = mapping[justification] ?? "Left";
-          this.engine.block.setEnum(
-            textBlock,
-            "text/horizontalAlignment",
+      this.engine.block.setEnum(
+        textBlock,
+        "text/horizontalAlignment",
         justificationValue
       );
     }
@@ -1397,14 +1398,13 @@ export class PSDParser {
         );
       }
       // set vector stroke data
-      this.engine.block.setStrokeEnabled(graphicBlock, true);
+      const strokeEnabledFlag = vstk.data.descriptor.items.get(
+        "strokeEnabled"
+      ) as VectorBooleanTypeItem;
+      this.engine.block.setStrokeEnabled(graphicBlock, strokeEnabledFlag.value);
       this.engine.block.setStrokeWidth(graphicBlock, strokeWidth.value);
-      this.engine.block.setStrokeColor(graphicBlock, {
-        r,
-        g,
-        b,
-        a: strokeOpacity.value / 100.0,
-      });
+      const color = { r, g, b, a: strokeOpacity.value / 100.0 };
+      this.engine.block.setStrokeColor(graphicBlock, color);
     }
     return graphicBlock;
   }

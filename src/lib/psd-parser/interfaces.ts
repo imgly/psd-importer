@@ -144,6 +144,11 @@ export interface VectorNumberTypeItem {
   value: number;
 }
 
+export interface VectorBooleanTypeItem {
+  type: string;
+  value: boolean;
+}
+
 export interface VectorObjectTypeItem {
   type: string;
   descriptor: {
