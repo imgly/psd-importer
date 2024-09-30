@@ -1403,6 +1403,12 @@ export class PSDParser {
       const strokeEnabledFlag = vstk.data.descriptor.items.get(
         "strokeEnabled"
       ) as VectorBooleanTypeItem;
+      // get fill enabled flag
+      const fillEnabledFlag = vstk.data.descriptor.items.get(
+        "fillEnabled"
+      ) as VectorBooleanTypeItem;
+      // set fill enabled flag:
+      this.engine.block.setFillEnabled(graphicBlock, fillEnabledFlag.value);
       this.engine.block.setStrokeEnabled(graphicBlock, strokeEnabledFlag.value);
       this.engine.block.setStrokeWidth(graphicBlock, strokeWidth.value);
       const color = { r, g, b, a: strokeOpacity.value / 100.0 };
