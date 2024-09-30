@@ -559,9 +559,9 @@ export class PSDParser {
     // However, this baseline shift is already applied to the calculated text block bounding box.
     // So currently we do not need to apply it again.
 
-    // average kerning
-    let kerningAverage = 0;
-    let letterSpacingAverage = 0;
+    // Currently, the CE.SDK does not support kerning and letter spacing for text runs inside a text block.
+    let kerningSum = 0;
+    let letterSpacingSum = 0;
 
     // check for style(s) of text content section(s)
     const styleRunLengthArray =
@@ -569,134 +569,79 @@ export class PSDParser {
     if (styleRunLengthArray) {
       // first character of the text content
       let textSectionStart = 0;
-
-      // kerning array
-      const kerningArr: Array<number> = [];
-      // letter spacing array
-      const letterSpacingArr: Array<number> = [];
-
-      // loop through each style section
-      styleRunLengthArray.forEach((len, index) => {
+      const styleRuns = styleRunLengthArray
+        .map((len, index) => {
+          const from = textSectionStart;
+          const to = textSectionStart + len - 1;
+          const styleRun = textProperties.EngineDict?.StyleRun?.RunArray[index];
+          const styleSheetData = styleRun?.StyleSheet?.StyleSheetData;
+          textSectionStart += len;
+          return { from, to, styleRun, styleSheetData };
+        })
+        .filter(({ styleRun }) => styleRun);
+      // styleRunLengthArray contains the length of each text style run in characters
+      styleRuns.forEach(({ from, to, styleRun, styleSheetData }) => {
         // set text case
-        const fontCaps =
-          textProperties.EngineDict?.StyleRun?.RunArray[index]?.StyleSheet
-            ?.StyleSheetData?.FontCaps;
+        const fontCaps = styleSheetData.FontCaps;
         if (fontCaps) {
-          let textCase: TextCase;
-          switch (fontCaps) {
-            case 1:
-              textCase = "Lowercase";
-              break;
-            case 2:
-              textCase = "Uppercase";
-              break;
-            default:
-              textCase = "Normal";
-          }
-          this.engine.block.setTextCase(
-            textBlock,
-            textCase,
-            textSectionStart,
-            Math.min(textContent.length, textSectionStart + len)
-          );
+          const mapping: Record<number, TextCase> = {
+            1: "Lowercase",
+            2: "Uppercase",
+          };
+          const textCase = mapping[fontCaps] ?? "Normal";
+          this.engine.block.setTextCase(textBlock, textCase, from, to);
         }
 
         // apply bold
-        if (
-          textProperties.EngineDict?.StyleRun?.RunArray[index]?.StyleSheet
-            ?.StyleSheetData.FauxBold
-        ) {
-          this.engine.block.toggleBoldFont(
-            textBlock,
-            textSectionStart,
-            Math.min(textContent.length, textSectionStart + len)
-          );
+        if (styleSheetData.FauxBold) {
+          this.engine.block.toggleBoldFont(textBlock, from, to);
         }
 
         // apply italic
-        if (
-          textProperties.EngineDict?.StyleRun?.RunArray[index]?.StyleSheet
-            ?.StyleSheetData.FauxItalic
-        ) {
-          this.engine.block.toggleItalicFont(
-            textBlock,
-            textSectionStart,
-            Math.min(textContent.length, textSectionStart + len)
-          );
+        if (styleSheetData.FauxItalic) {
+          this.engine.block.toggleItalicFont(textBlock, from, to);
         }
 
         // set text fill color
-        const textFillColor = this.getTextFillColor(textProperties, index);
-        if (!textFillColor) {
-          this.logger.log(
-            "Text fill color not found for text part " +
-              `'${textContent.substring(
-                textSectionStart,
-                Math.min(textContent.length, textSectionStart + len)
-              )}'` +
-              `, text: '${textContent}'` +
-              ", using the default color",
-            "warning"
-          );
+        const textFillColor = this.getStyleSheetColor(
+          this.getTextValue(textProperties, styleSheetData, "FillColor")
+        );
+        if (textFillColor) {
+          this.engine.block.setTextColor(textBlock, textFillColor, from, to);
         } else {
-          this.engine.block.setTextColor(
-            textBlock,
-            textFillColor,
-            textSectionStart,
-            Math.min(textContent.length, textSectionStart + len)
+          this.logger.log(
+            `Text fill color not found for text part '${textContent.substring(
+              from,
+              to
+            )}', text: '${textContent}', using the default color`,
+            "warning"
           );
         }
 
         // accumulate letter spacing
-        const letterSpacing = textProperties.EngineDict?.StyleRun?.RunArray[
-          index
-        ]?.StyleSheet?.StyleSheetData?.Tracking
-          ? textProperties.EngineDict.StyleRun.RunArray[index].StyleSheet
-              .StyleSheetData.Tracking
-          : 0;
-        letterSpacingArr.push(letterSpacing);
-
+        letterSpacingSum += (styleSheetData.Tracking ?? 0) * (to - from);
         // accumulate kerning
-        const kerning = textProperties.EngineDict?.StyleRun?.RunArray[index]
-          ?.StyleSheet?.StyleSheetData.Kerning
-          ? textProperties.EngineDict.StyleRun.RunArray[index].StyleSheet
-              .StyleSheetData.Kerning
-          : 0;
-        kerningArr.push(kerning);
-
-        // increment content section start
-        textSectionStart += len;
+        kerningSum = (styleSheetData.Kerning ?? 0) * (to - from);
       });
-
-      // calculate average kerning if available
-      if (kerningArr) {
-        const total = kerningArr.reduce((sum, number) => sum + number, 0);
-        kerningAverage = total / kerningArr.length;
-      }
-      // calculate average letter spacing if available
-      if (letterSpacingArr) {
-        const total = letterSpacingArr.reduce((sum, number) => sum + number, 0);
-        letterSpacingAverage = total / letterSpacingArr.length;
-      }
     }
 
-    const TEXT_SHAPE_TYPES = {
+    const TEXT_SHAPE_TYPES: Record<string, "Fixed" | "Auto"> = {
       "1": "Fixed",
       "0": "Auto",
     };
-
-    const shapeType = textProperties.EngineDict?.Rendered?.Shapes?.Children[0]
-      .ShapeType as keyof typeof TEXT_SHAPE_TYPES;
-    const textBoxShape = TEXT_SHAPE_TYPES[shapeType] ?? "Fixed";
+    const textShapeType =
+      textProperties.EngineDict?.Rendered?.Shapes?.Children[0].TextShapeType;
+    const textBoxShape = TEXT_SHAPE_TYPES[textShapeType] ?? "Fixed";
 
     // set the font size
-    // cesdk only supports a single font size for the entire content
-    const textFontSizeAttribute =
-      textProperties.EngineDict?.StyleRun?.RunArray[0]?.StyleSheet
-        ?.StyleSheetData?.FontSize ??
-      textProperties.ResourceDict?.StyleSheetSet[0]?.StyleSheetData?.FontSize ??
-      textProperties.DocumentResources?.StyleSheetSet[0]?.StyleSheetData
-        ?.FontSize;
+    // CE.SDK currently only supports a single font size for the entire content
+    const firstRunStyleSheet =
+      textProperties.EngineDict?.StyleRun?.RunArray[0].StyleSheet;
+    const textFontSizeAttribute = this.getTextValue(
+      textProperties,
+      firstRunStyleSheet?.StyleSheetData,
+      "FontSize"
+    );
     const textFontSize = this.scaleTextNumber(
       textFontSizeAttribute,
       psdLayer.additionalProperties.TySh ?? null
@@ -708,42 +653,25 @@ export class PSDParser {
     if (paragraphRunArray) {
       // extract justification from the first part
       const justification =
-        textProperties.EngineDict?.ParagraphRun?.RunArray[0]?.ParagraphSheet
-          ?.Properties?.Justification;
-      switch (justification) {
-        case 0:
+        paragraphRunArray[0]?.ParagraphSheet?.Properties?.Justification;
+      const mapping: Record<string, string> = {
+        "0": "Left",
+        "1": "Right",
+        "2": "Center",
+        // "3": "Justified", // Justified is not supported in CE.SDK
+      };
+      const justificationValue = mapping[justification] ?? "Left";
           this.engine.block.setEnum(
             textBlock,
             "text/horizontalAlignment",
-            "Left"
-          );
-          break;
-        case 2:
-          this.engine.block.setEnum(
-            textBlock,
-            "text/horizontalAlignment",
-            "Center"
-          );
-          break;
-        case 1:
-          this.engine.block.setEnum(
-            textBlock,
-            "text/horizontalAlignment",
-            "Right"
-          );
-          break;
-        // case "3" for "justified"
-      }
+        justificationValue
+      );
     }
 
     // set text stroke color
     const textStrokeColor = this.getTextStrokeColor(textProperties, 0);
     if (textStrokeColor) {
-      const outlineWidth = textProperties.EngineDict?.StyleRun?.RunArray[0]
-        ?.StyleSheet?.StyleSheetData.OutlineWidth
-        ? textProperties.EngineDict?.StyleRun?.RunArray[0]?.StyleSheet
-            ?.StyleSheetData.OutlineWidth
-        : 1;
+      const outlineWidth = firstRunStyleSheet.StyleSheetData?.OutlineWidth ?? 1;
       this.engine.block.setStrokeEnabled(textBlock, true);
       this.engine.block.setStrokeWidth(textBlock, outlineWidth);
       this.engine.block.setStrokeColor(textBlock, {
@@ -754,16 +682,14 @@ export class PSDParser {
       });
     }
 
-    // calculate total letter spacing
-    let totalLetterSpacing = 0;
-    // add actual letter spacing (tracking)
-    totalLetterSpacing += letterSpacingAverage;
-    // add average kerning
-    totalLetterSpacing += kerningAverage;
+    // add average kerning and average letter spacing
+    const realLetterSpacing =
+      (letterSpacingSum / 10 / 100 + kerningSum / 10 / 100) /
+      textContent.length;
     this.engine.block.setFloat(
       textBlock,
       "text/letterSpacing",
-      totalLetterSpacing / 6
+      realLetterSpacing
     );
 
     // set line height
@@ -1084,38 +1010,36 @@ export class PSDParser {
     };
   }
 
-  private getTextFillColor(
+  private getStyleSheetColor = (
+    value:
+      | {
+          Values: number[];
+        }
+      | undefined
+      | null
+  ): RGBAColor | null => {
+    const color = value?.Values;
+    if (color) {
+      return { r: color[1], g: color[2], b: color[3], a: color[0] };
+    }
+    return null;
+  };
+
+  private getTextValue(
     textProperties: TextProperties,
-    index: number
-  ): RGBAColor | null {
-    if (
-      textProperties.EngineDict?.StyleRun?.RunArray[index]?.StyleSheet
-        ?.StyleSheetData?.FillColor?.Values
-    ) {
-      const color =
-        textProperties.EngineDict.StyleRun.RunArray[index].StyleSheet
-          .StyleSheetData.FillColor.Values;
-      return { r: color[1], g: color[2], b: color[3], a: color[0] };
-    }
-
-    if (
-      textProperties.ResourceDict?.StyleSheetSet[0]?.StyleSheetData?.FillColor
-        ?.Values
-    ) {
-      const color =
-        textProperties.ResourceDict.StyleSheetSet[0].StyleSheetData.FillColor
-          .Values;
-      return { r: color[1], g: color[2], b: color[3], a: color[0] };
-    }
-
-    if (
-      textProperties.DocumentResources?.StyleSheetSet[0]?.StyleSheetData
-        ?.FillColor?.Values
-    ) {
-      const color =
-        textProperties.DocumentResources.StyleSheetSet[0].StyleSheetData
-          .FillColor.Values;
-      return { r: color[1], g: color[2], b: color[3], a: color[0] };
+    styleRunStyleSheetData: any,
+    property: string
+  ): any | null {
+    const styleSheets = [
+      styleRunStyleSheetData,
+      textProperties.ResourceDict?.StyleSheetSet[0]?.StyleSheetData,
+      textProperties.DocumentResources?.StyleSheetSet[0]?.StyleSheetData,
+    ];
+    for (const styleSheet of styleSheets) {
+      const propertyValue = styleSheet?.[property];
+      if (propertyValue) {
+        return propertyValue;
+      }
     }
     return null;
   }
