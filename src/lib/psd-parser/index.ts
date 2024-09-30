@@ -1240,10 +1240,10 @@ export class PSDParser {
     }
 
     // set layer position
-    this.engine.block.setPositionX(graphicBlock, x);
-    this.engine.block.setPositionY(graphicBlock, y);
-    this.engine.block.setWidth(graphicBlock, width);
-    this.engine.block.setHeight(graphicBlock, height);
+    this.engine.block.setPositionX(graphicBlock, psdLayer.left);
+    this.engine.block.setPositionY(graphicBlock, psdLayer.top);
+    this.engine.block.setWidth(graphicBlock, psdLayer.width);
+    this.engine.block.setHeight(graphicBlock, psdLayer.height);
 
     // apply rotation
     this.rotateBlock(graphicBlock, psdLayer);
@@ -1339,8 +1339,10 @@ export class PSDParser {
     // process path records
     let svgPath = this.buildShapeFromPathRecords(
       pathRecords,
-      psdLayer.width,
-      psdLayer.height
+      this.width,
+      this.height,
+      -psdLayer.left / this.width,
+      -(psdLayer.top / this.height)
     );
 
     // set the vector path's path data, width, and height
@@ -1410,9 +1412,11 @@ export class PSDParser {
   }
 
   private buildShapeFromPathRecords(
-    pathRecords: any,
+    pathRecords: PathRecord[],
     width: number,
-    height: number
+    height: number,
+    offsetX = 0,
+    offsetY = 0
   ) {
     let pathFillRule = false;
     let initialFillRule = false;
@@ -1423,6 +1427,20 @@ export class PSDParser {
 
     let svgPath = "";
     for (const record of pathRecords) {
+      // apply offsets:
+      if ("anchor" in record && record.anchor !== null) {
+        record.anchor.horiz += offsetX;
+        record.anchor.vert += offsetY;
+      }
+      if ("leaving" in record && record.leaving !== null) {
+        record.leaving.horiz += offsetX;
+        record.leaving.vert += offsetY;
+      }
+      if ("preceding" in record && record.preceding !== null) {
+        record.preceding.horiz += offsetX;
+        record.preceding.vert += offsetY;
+      }
+
       switch (record.type) {
         case PathRecordType.ClosedSubpathBezierKnotLinked:
         case PathRecordType.ClosedSubpathBezierKnotUnlinked:
