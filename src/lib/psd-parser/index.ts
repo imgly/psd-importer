@@ -1434,16 +1434,30 @@ export class PSDParser {
 
     let svgPath = "";
     for (const record of pathRecords) {
-      // apply offsets:
+      // apply offsets and normalize values:
+      const normalize = (value: number) => {
+        // a 255 indicates a negative value
+        // get bitwise representation of the number
+        if (value < 200) {
+          return value;
+        }
+        return value - 256;
+      };
       if ("anchor" in record && record.anchor !== null) {
+        record.anchor.horiz = normalize(record.anchor.horiz);
+        record.anchor.vert = normalize(record.anchor.vert);
         record.anchor.horiz += offsetX;
         record.anchor.vert += offsetY;
       }
       if ("leaving" in record && record.leaving !== null) {
+        record.leaving.horiz = normalize(record.leaving.horiz);
+        record.leaving.vert = normalize(record.leaving.vert);
         record.leaving.horiz += offsetX;
         record.leaving.vert += offsetY;
       }
       if ("preceding" in record && record.preceding !== null) {
+        record.preceding.horiz = normalize(record.preceding.horiz);
+        record.preceding.vert = normalize(record.preceding.vert);
         record.preceding.horiz += offsetX;
         record.preceding.vert += offsetY;
       }
