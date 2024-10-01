@@ -1341,7 +1341,8 @@ export class PSDParser {
       pathRecords,
       this.width,
       this.height,
-      -psdLayer.left / this.width,
+      // We need to apply the offset to the path records. This moves all points to the top left corner
+      -(psdLayer.left / this.width),
       -(psdLayer.top / this.height)
     );
 
