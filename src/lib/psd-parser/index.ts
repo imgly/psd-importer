@@ -631,7 +631,7 @@ export class PSDParser {
       "0": "Auto",
     };
     const textShapeType =
-      textProperties.EngineDict?.Rendered?.Shapes?.Children[0].TextShapeType;
+      textProperties.EngineDict?.Rendered?.Shapes?.Children[0].ShapeType;
     const textBoxShape = TEXT_SHAPE_TYPES[textShapeType] ?? "Fixed";
 
     // set the font size
