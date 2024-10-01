@@ -573,7 +573,7 @@ export class PSDParser {
       const styleRuns = styleRunLengthArray
         .map((len, index) => {
           const from = textSectionStart;
-          const to = textSectionStart + len - 1;
+          const to = textSectionStart + len;
           const styleRun = textProperties.EngineDict?.StyleRun?.RunArray[index];
           const styleSheetData = styleRun?.StyleSheet?.StyleSheetData;
           textSectionStart += len;
