@@ -754,7 +754,6 @@ export class PSDParser {
 
   private textVerticalAlignmentFix(textBlock: number) {
     const fontSize = this.engine.block.getFloat(textBlock, "text/fontSize");
-    const fontSizeInDesignUnit = this.fontSizeToInches(fontSize);
     const fontUri = this.engine.block.getString(textBlock, "text/fontFileUri");
     const fontInfo = fontInfoMap[fontUri];
     if (fontInfo) {
@@ -762,7 +761,7 @@ export class PSDParser {
       const offset =
         (((-fontInfo.descender + fontInfo.ascender - fontInfo.unitsPerEm) /
           fontInfo.unitsPerEm) *
-          fontSizeInDesignUnit) /
+          fontSize) /
         2;
       this.moveTextInTextDirection(textBlock, 0, -offset);
     }
@@ -771,12 +770,11 @@ export class PSDParser {
   // This should not be applied in multiple lines text
   private enableTextOneLineAlignmentFix(textBlock: number) {
     const fontSize = this.engine.block.getFloat(textBlock, "text/fontSize");
-    const fontSizeInDesignUnit = this.fontSizeToInches(fontSize);
     // Determine if text should be on one line based on frame height
     const shouldBeOneLineText = (block: number): boolean => {
       const frameHeight = this.engine.block.getFrameHeight(block);
       // If frame height is less than twice the font size, it's likely a one-line text
-      return frameHeight < 2 * fontSizeInDesignUnit;
+      return frameHeight < 2 * fontSize;
     };
     // Only if the text has a single line
     if (shouldBeOneLineText(textBlock)) {
@@ -809,7 +807,6 @@ export class PSDParser {
     );
 
     const fontSize = this.engine.block.getFloat(textBlock, "text/fontSize");
-    const fontSizeInDesignUnit = this.fontSizeToInches(fontSize);
 
     // Function to check if the text block is overflowing
     // This is done by comparing the frame height in "auto" height mode to the real text block height
@@ -819,7 +816,7 @@ export class PSDParser {
     ): boolean => {
       const textBlockHeight = this.engine.block.getFrameHeight(textBlock);
       const isOverflowing =
-        textBlockHeight - realTextBlockHeight > fontSizeInDesignUnit / 2;
+        textBlockHeight - realTextBlockHeight > fontSize / 2;
       return isOverflowing;
     };
     const isPerfectFit = (
@@ -912,11 +909,6 @@ export class PSDParser {
     // Reset height to original
     this.engine.block.setHeightMode(textBlock, "Absolute");
     this.engine.block.setHeight(textBlock, originalHeight);
-  }
-
-  // Photoshop always uses 72 DPI for text size calculations
-  private fontSizeToInches(points: number): number {
-    return points / 72;
   }
 
   private getTextFontSet(textProperties: TextProperties): TypefaceParams {
