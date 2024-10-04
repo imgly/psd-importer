@@ -57,6 +57,7 @@ interface Flags {
   enableTextVerticalAlignmentFix: boolean;
   enableTextOneLineAlignmentFix: boolean;
   enableTextTypefaceReachableCheck: boolean;
+  enableCreateHiddenLayers: boolean;
   groupsEnabled: boolean;
 }
 const FlagDefaults: Flags = {
@@ -65,6 +66,7 @@ const FlagDefaults: Flags = {
   enableTextOneLineAlignmentFix: false,
   enableTextVerticalAlignmentFix: true,
   enableTextTypefaceReachableCheck: true,
+  enableCreateHiddenLayers: false,
   groupsEnabled: false,
 };
 
@@ -124,6 +126,8 @@ export class PSDParser {
     if (psdNode.type === "Layer") {
       let layerBlockId: number;
 
+      if (psdNode.isHidden && !this.flags.enableCreateHiddenLayers) return;
+
       if (psdNode.text) {
         layerBlockId = await this.createTextBlock(this.page, psdNode);
       } else {
@@ -140,6 +144,10 @@ export class PSDParser {
             layerBlockId = this.applyParentClipMasks(psdNode, layerBlockId);
           }
         }
+      }
+      // if the layer is hidden, hide the block
+      if (psdNode.isHidden) {
+        this.engine.block.setVisible(layerBlockId, false);
       }
       // map the layers to their corresponding groups
       const groupId = (psdNode as unknown as PartialLayerFrame).layerFrame
