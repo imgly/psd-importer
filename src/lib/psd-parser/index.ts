@@ -570,18 +570,21 @@ export class PSDParser {
     if (styleRunLengthArray) {
       // first character of the text content
       let textSectionStart = 0;
+      // styleRunLengthArray contains the length of each text style run in characters
       const styleRuns = styleRunLengthArray
         .map((len, index) => {
           const from = textSectionStart;
-          const to = textSectionStart + len;
           const styleRun = textProperties.EngineDict?.StyleRun?.RunArray[index];
           const styleSheetData = styleRun?.StyleSheet?.StyleSheetData;
+          const isLast = index === styleRunLengthArray.length - 1;
+          const lastOffset = isLast ? -1 : 0;
+          const to = textSectionStart + len + lastOffset;
+          if (!styleSheetData || from >= to) return false;
           textSectionStart += len;
-          return { from, to, styleRun, styleSheetData };
+          return { from, to, styleSheetData };
         })
-        .filter(({ styleRun }) => styleRun);
-      // styleRunLengthArray contains the length of each text style run in characters
-      styleRuns.forEach(({ from, to, styleRun, styleSheetData }) => {
+        .filter((b) => b !== false);
+      styleRuns.forEach(({ from, to, styleSheetData }) => {
         // set text case
         const fontCaps = styleSheetData.FontCaps;
         if (fontCaps) {
