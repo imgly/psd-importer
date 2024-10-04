@@ -1,4 +1,3 @@
-// @ts-ignore
 import type CreativeEngine from "@cesdk/engine";
 import {
   BlendMode,
@@ -18,6 +17,7 @@ import {
   PathRecord,
   TypeToolObjectSettingAliBlock,
 } from "@webtoon/psd/dist/interfaces";
+// @ts-ignore
 import opentype from "opentype.js";
 import { parseColor } from "./color";
 import type { TypefaceParams, TypefaceResolver } from "./font-resolver";
@@ -25,6 +25,7 @@ import defaultFontResolver from "./font-resolver";
 import { EncodeBufferToPNG } from "./image-encoder";
 import {
   PartialLayerFrame,
+  StyleSheetData,
   TextProperties,
   VectorBooleanTypeItem,
   VectorNumberTypeItem,
@@ -522,9 +523,9 @@ export class PSDParser {
         return { x: newX, y: newY };
       }
 
-      const topLeft = applyTransform(left, top, TySh, 1);
-      const topRight = applyTransform(right, top, TySh, 1);
-      const bottomLeft = applyTransform(left, bottom, TySh, 1);
+      const topLeft = applyTransform(left, top, TySh);
+      const topRight = applyTransform(right, top, TySh);
+      const bottomLeft = applyTransform(left, bottom, TySh);
 
       x = topLeft.x;
       y = topLeft.y;
@@ -577,7 +578,12 @@ export class PSDParser {
       // first character of the text content
       let textSectionStart = 0;
       // styleRunLengthArray contains the length of each text style run in characters
-      const styleRuns = styleRunLengthArray
+      interface StyleRun {
+        from: number;
+        to: number;
+        styleSheetData: StyleSheetData;
+      }
+      const styleRuns: StyleRun[] = styleRunLengthArray
         .map((len, index) => {
           const from = textSectionStart;
           const styleRun = textProperties.EngineDict?.StyleRun?.RunArray[index];
@@ -589,7 +595,7 @@ export class PSDParser {
           textSectionStart += len;
           return { from, to, styleSheetData };
         })
-        .filter((b) => b !== false);
+        .filter((b) => b !== false) as StyleRun[];
       styleRuns.forEach(({ from, to, styleSheetData }) => {
         // set text case
         const fontCaps = styleSheetData.FontCaps;

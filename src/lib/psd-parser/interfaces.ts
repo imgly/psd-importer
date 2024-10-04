@@ -3,7 +3,7 @@ interface PsdColor {
   Type: number;
 }
 
-interface StyleSheetData {
+export interface StyleSheetData {
   DiacriticPos: number;
   Kashida: number;
   HindiNumbers: boolean;
@@ -74,7 +74,7 @@ interface ResourceDict {
   ParagraphSheetSet: Array<ParagraphSheet>;
 }
 
-interface StyleRunArrayItem {
+export interface StyleRunArrayItem {
   StyleSheet: {
     StyleSheetData: StyleSheetData;
   };
