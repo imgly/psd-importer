@@ -79,7 +79,6 @@ export class PSDParser {
   private stack: number;
   private width: number;
   private height: number;
-  private scaleFactor: number;
   private page: number;
   private psd: Psd;
   private logger = new Logger();
@@ -124,6 +123,7 @@ export class PSDParser {
     // handle PSD node types
     if (psdNode.type === "Layer") {
       let layerBlockId: number;
+
       if (psdNode.text) {
         layerBlockId = await this.createTextBlock(this.page, psdNode);
       } else {
