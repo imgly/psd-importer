@@ -33,27 +33,6 @@ export const webtoonToCesdkBlendMode: { [key: string]: BlendMode } = {
   lum: "Luminosity",
 };
 
-export function getDesignUnit(psd: Psd): DesignUnit {
-  if (psd.resolutionInfo?.horizontalUnit === 2) {
-    return "Millimeter";
-  }
-  return "Inch";
-}
-
-export function getScaleFactor(psd: Psd): number {
-  // default scale factor
-  let scaleFactor = 72;
-  if (!psd.resolutionInfo) return scaleFactor;
-
-  if (psd.resolutionInfo.horizontalUnit === 2) {
-    // convert PixelsPerCM to PixelsPerMM
-    return psd.resolutionInfo.horizontal * 10;
-  }
-
-  // PixelsPerInch
-  return psd.resolutionInfo?.horizontal;
-}
-
 export async function waitUntilBlockIsReady(
   engine: CreativeEngine,
   block: number,

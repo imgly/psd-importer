@@ -1,5 +1,3 @@
-// @ts-ignore
-import opentype from "opentype.js";
 import type CreativeEngine from "@cesdk/engine";
 import {
   BlendMode,
@@ -19,25 +17,24 @@ import {
   PathRecord,
   TypeToolObjectSettingAliBlock,
 } from "@webtoon/psd/dist/interfaces";
+// @ts-ignore
+import opentype from "opentype.js";
+import { parseColor } from "./color";
 import type { TypefaceParams, TypefaceResolver } from "./font-resolver";
 import defaultFontResolver from "./font-resolver";
 import { EncodeBufferToPNG } from "./image-encoder";
 import {
+  PartialLayerFrame,
+  StyleSheetData,
   TextProperties,
+  VectorBooleanTypeItem,
   VectorNumberTypeItem,
   VectorObjectTypeItem,
   VectorPathRecordItem,
   VectorUnitTypeItem,
-  PartialLayerFrame,
 } from "./interfaces";
 import { Logger } from "./logger";
-import {
-  getDesignUnit,
-  getScaleFactor,
-  waitUntilBlockIsReady,
-  webtoonToCesdkBlendMode,
-} from "./utils";
-import { parseColor } from "./color";
+import { waitUntilBlockIsReady, webtoonToCesdkBlendMode } from "./utils";
 
 /**
  * The pixel scale factor used in the CESDK Editor
@@ -59,16 +56,16 @@ interface Flags {
   applyClipMasks: boolean;
   enableTextFitting: boolean;
   enableTextVerticalAlignmentFix: boolean;
-  enableTextOneLineAlignmentFix: boolean;
   enableTextTypefaceReachableCheck: boolean;
+  enableCreateHiddenLayers: boolean;
   groupsEnabled: boolean;
 }
 const FlagDefaults: Flags = {
   applyClipMasks: true,
   enableTextFitting: true,
-  enableTextOneLineAlignmentFix: false,
   enableTextVerticalAlignmentFix: true,
   enableTextTypefaceReachableCheck: true,
+  enableCreateHiddenLayers: false,
   groupsEnabled: false,
 };
 
@@ -83,7 +80,6 @@ export class PSDParser {
   private stack: number;
   private width: number;
   private height: number;
-  private scaleFactor: number;
   private page: number;
   private psd: Psd;
   private logger = new Logger();
@@ -106,7 +102,6 @@ export class PSDParser {
     this.stack = 0;
     this.width = 0;
     this.height = 0;
-    this.scaleFactor = DEFAULT_PIXEL_SCALE_FACTOR;
     this.page = 0;
     this.psd = psd;
     this.fontResolver = options.fontResolver ?? defaultFontResolver;
@@ -129,6 +124,9 @@ export class PSDParser {
     // handle PSD node types
     if (psdNode.type === "Layer") {
       let layerBlockId: number;
+
+      if (psdNode.isHidden && !this.flags.enableCreateHiddenLayers) return;
+
       if (psdNode.text) {
         layerBlockId = await this.createTextBlock(this.page, psdNode);
       } else {
@@ -145,6 +143,10 @@ export class PSDParser {
             layerBlockId = this.applyParentClipMasks(psdNode, layerBlockId);
           }
         }
+      }
+      // if the layer is hidden, hide the block
+      if (psdNode.isHidden) {
+        this.engine.block.setVisible(layerBlockId, false);
       }
       // map the layers to their corresponding groups
       const groupId = (psdNode as unknown as PartialLayerFrame).layerFrame
@@ -264,8 +266,8 @@ export class PSDParser {
 
     const height = this.height;
     const width = this.width;
-    this.engine.block.setWidth(graphicBlock, width / this.scaleFactor);
-    this.engine.block.setHeight(graphicBlock, height / this.scaleFactor);
+    this.engine.block.setWidth(graphicBlock, width);
+    this.engine.block.setHeight(graphicBlock, height);
     // process path records
     let svgPath = this.buildShapeFromPathRecords(
       mask!.pathRecords,
@@ -275,16 +277,8 @@ export class PSDParser {
 
     // set the vector path's path data, width, and height
     this.engine.block.setString(shape, "vector_path/path", svgPath);
-    this.engine.block.setFloat(
-      shape,
-      "vector_path/width",
-      width / this.scaleFactor
-    );
-    this.engine.block.setFloat(
-      shape,
-      "vector_path/height",
-      height / this.scaleFactor
-    );
+    this.engine.block.setFloat(shape, "vector_path/width", width);
+    this.engine.block.setFloat(shape, "vector_path/height", height);
     // append child to the page
     this.engine.block.appendChild(this.page, graphicBlock);
     return graphicBlock;
@@ -315,9 +309,6 @@ export class PSDParser {
     this.width = this.psd.width;
     this.height = this.psd.height;
 
-    // set scaling factor
-    this.scaleFactor = getScaleFactor(this.psd);
-
     await this.initScene();
 
     await this.createPage(this.stack);
@@ -345,24 +336,21 @@ export class PSDParser {
     this.engine.block.setFloat(this.stack, "stack/spacing", 35);
     this.engine.block.setBool(this.stack, "stack/spacingInScreenspace", true);
 
-    const designUnit = getDesignUnit(this.psd);
     // set page format custom:
     this.engine.block.setString(this.scene, "scene/pageFormatId", "Custom");
-    this.engine.scene.setDesignUnit(designUnit);
-    this.engine.block.setFloat(
-      this.scene,
-      "scene/pixelScaleFactor",
-      this.scaleFactor
-    );
+    // psd always uses pixels as design unit for its dimensions
+    this.engine.scene.setDesignUnit("Pixel");
+    // set dpi to 72 since psd uses 72 dpi to size its texts
+    this.engine.block.setFloat(this.scene, "scene/dpi", 72);
     this.engine.block.setFloat(
       this.scene,
       "scene/pageDimensions/width",
-      this.width / this.scaleFactor
+      this.width
     );
     this.engine.block.setFloat(
       this.scene,
       "scene/pageDimensions/height",
-      this.height / this.scaleFactor
+      this.height
     );
   }
 
@@ -372,8 +360,8 @@ export class PSDParser {
 
     // set the page name, width, and height
     this.engine.block.setName(pageBlock, this.psd.name);
-    this.engine.block.setWidth(pageBlock, this.width / this.scaleFactor);
-    this.engine.block.setHeight(pageBlock, this.height / this.scaleFactor);
+    this.engine.block.setWidth(pageBlock, this.width);
+    this.engine.block.setHeight(pageBlock, this.height);
     this.engine.block.setClipped(pageBlock, true);
 
     // disable the default page fill color
@@ -495,10 +483,10 @@ export class PSDParser {
     }
 
     // convert the text frame's dimensions from points to the CESDK design unit
-    let x = psdLayer.left / this.scaleFactor;
-    let y = psdLayer.top / this.scaleFactor;
-    let width = psdLayer.width / this.scaleFactor;
-    let height = psdLayer.height / this.scaleFactor;
+    let x = psdLayer.left;
+    let y = psdLayer.top;
+    let width = psdLayer.width;
+    let height = psdLayer.height;
 
     const TySh = psdLayer.additionalProperties.TySh;
     if (TySh) {
@@ -520,8 +508,7 @@ export class PSDParser {
       function applyTransform(
         x: number,
         y: number,
-        transform: TypeToolObjectSettingAliBlock,
-        scaleFactor: number
+        transform: TypeToolObjectSettingAliBlock
       ): { x: number; y: number } {
         const newX =
           transform.transformXX * x +
@@ -533,12 +520,12 @@ export class PSDParser {
           -transform.transformYX * x +
           transform.transformYY * y +
           transform.transformTY;
-        return { x: newX / scaleFactor, y: newY / scaleFactor };
+        return { x: newX, y: newY };
       }
 
-      const topLeft = applyTransform(left, top, TySh, this.scaleFactor);
-      const topRight = applyTransform(right, top, TySh, this.scaleFactor);
-      const bottomLeft = applyTransform(left, bottom, TySh, this.scaleFactor);
+      const topLeft = applyTransform(left, top, TySh);
+      const topRight = applyTransform(right, top, TySh);
+      const bottomLeft = applyTransform(left, bottom, TySh);
 
       x = topLeft.x;
       y = topLeft.y;
@@ -580,9 +567,9 @@ export class PSDParser {
     // However, this baseline shift is already applied to the calculated text block bounding box.
     // So currently we do not need to apply it again.
 
-    // average kerning
-    let kerningAverage = 0;
-    let letterSpacingAverage = 0;
+    // Currently, the CE.SDK does not support kerning and letter spacing for text runs inside a text block.
+    let kerningSum = 0;
+    let letterSpacingSum = 0;
 
     // check for style(s) of text content section(s)
     const styleRunLengthArray =
@@ -590,138 +577,90 @@ export class PSDParser {
     if (styleRunLengthArray) {
       // first character of the text content
       let textSectionStart = 0;
-
-      // kerning array
-      const kerningArr: Array<number> = [];
-      // letter spacing array
-      const letterSpacingArr: Array<number> = [];
-
-      // loop through each style section
-      styleRunLengthArray.forEach((len, index) => {
+      // styleRunLengthArray contains the length of each text style run in characters
+      interface StyleRun {
+        from: number;
+        to: number;
+        styleSheetData: StyleSheetData;
+      }
+      const styleRuns: StyleRun[] = styleRunLengthArray
+        .map((len, index) => {
+          const from = textSectionStart;
+          const styleRun = textProperties.EngineDict?.StyleRun?.RunArray[index];
+          const styleSheetData = styleRun?.StyleSheet?.StyleSheetData;
+          const isLast = index === styleRunLengthArray.length - 1;
+          const lastOffset = isLast ? -1 : 0;
+          const to = textSectionStart + len + lastOffset;
+          if (!styleSheetData || from >= to) return false;
+          textSectionStart += len;
+          return { from, to, styleSheetData };
+        })
+        .filter((b) => b !== false) as StyleRun[];
+      styleRuns.forEach(({ from, to, styleSheetData }) => {
         // set text case
-        const fontCaps =
-          textProperties.EngineDict?.StyleRun?.RunArray[index]?.StyleSheet
-            ?.StyleSheetData?.FontCaps;
+        const fontCaps = styleSheetData.FontCaps;
         if (fontCaps) {
-          let textCase: TextCase;
-          switch (fontCaps) {
-            case 1:
-              textCase = "Lowercase";
-              break;
-            case 2:
-              textCase = "Uppercase";
-              break;
-            default:
-              textCase = "Normal";
-          }
-          this.engine.block.setTextCase(
-            textBlock,
-            textCase,
-            textSectionStart,
-            Math.min(textContent.length, textSectionStart + len)
-          );
+          const mapping: Record<number, TextCase> = {
+            1: "Lowercase",
+            2: "Uppercase",
+          };
+          const textCase = mapping[fontCaps] ?? "Normal";
+          this.engine.block.setTextCase(textBlock, textCase, from, to);
         }
 
         // apply bold
-        if (
-          textProperties.EngineDict?.StyleRun?.RunArray[index]?.StyleSheet
-            ?.StyleSheetData.FauxBold
-        ) {
-          this.engine.block.toggleBoldFont(
-            textBlock,
-            textSectionStart,
-            Math.min(textContent.length, textSectionStart + len)
-          );
+        if (styleSheetData.FauxBold) {
+          this.engine.block.toggleBoldFont(textBlock, from, to);
         }
 
         // apply italic
-        if (
-          textProperties.EngineDict?.StyleRun?.RunArray[index]?.StyleSheet
-            ?.StyleSheetData.FauxItalic
-        ) {
-          this.engine.block.toggleItalicFont(
-            textBlock,
-            textSectionStart,
-            Math.min(textContent.length, textSectionStart + len)
-          );
+        if (styleSheetData.FauxItalic) {
+          this.engine.block.toggleItalicFont(textBlock, from, to);
         }
 
         // set text fill color
-        const textFillColor = this.getTextFillColor(textProperties, index);
-        if (!textFillColor) {
-          this.logger.log(
-            "Text fill color not found for text part " +
-              `'${textContent.substring(
-                textSectionStart,
-                Math.min(textContent.length, textSectionStart + len)
-              )}'` +
-              `, text: '${textContent}'` +
-              ", using the default color",
-            "warning"
-          );
+        const textFillColor = this.getStyleSheetColor(
+          this.getTextValue(textProperties, styleSheetData, "FillColor")
+        );
+        if (textFillColor) {
+          this.engine.block.setTextColor(textBlock, textFillColor, from, to);
         } else {
-          this.engine.block.setTextColor(
-            textBlock,
-            textFillColor,
-            textSectionStart,
-            Math.min(textContent.length, textSectionStart + len)
+          this.logger.log(
+            `Text fill color not found for text part '${textContent.substring(
+              from,
+              to
+            )}', text: '${textContent}', using the default color`,
+            "warning"
           );
         }
 
         // accumulate letter spacing
-        const letterSpacing = textProperties.EngineDict?.StyleRun?.RunArray[
-          index
-        ]?.StyleSheet?.StyleSheetData?.Tracking
-          ? textProperties.EngineDict.StyleRun.RunArray[index].StyleSheet
-              .StyleSheetData.Tracking
-          : 0;
-        letterSpacingArr.push(letterSpacing);
-
+        letterSpacingSum += (styleSheetData.Tracking ?? 0) * (to - from);
         // accumulate kerning
-        const kerning = textProperties.EngineDict?.StyleRun?.RunArray[index]
-          ?.StyleSheet?.StyleSheetData.Kerning
-          ? textProperties.EngineDict.StyleRun.RunArray[index].StyleSheet
-              .StyleSheetData.Kerning
-          : 0;
-        kerningArr.push(kerning);
-
-        // increment content section start
-        textSectionStart += len;
+        kerningSum = (styleSheetData.Kerning ?? 0) * (to - from);
       });
-
-      // calculate average kerning if available
-      if (kerningArr) {
-        const total = kerningArr.reduce((sum, number) => sum + number, 0);
-        kerningAverage = total / kerningArr.length;
-      }
-      // calculate average letter spacing if available
-      if (letterSpacingArr) {
-        const total = letterSpacingArr.reduce((sum, number) => sum + number, 0);
-        letterSpacingAverage = total / letterSpacingArr.length;
-      }
     }
 
-    const TEXT_SHAPE_TYPES = {
+    const TEXT_SHAPE_TYPES: Record<string, "Fixed" | "Auto"> = {
       "1": "Fixed",
       "0": "Auto",
     };
-
-    const shapeType = textProperties.EngineDict?.Rendered?.Shapes?.Children[0]
-      .ShapeType as keyof typeof TEXT_SHAPE_TYPES;
-    const textBoxShape = TEXT_SHAPE_TYPES[shapeType] ?? "Fixed";
+    const textShapeType =
+      textProperties.EngineDict?.Rendered?.Shapes?.Children[0].ShapeType;
+    const textBoxShape = TEXT_SHAPE_TYPES[textShapeType] ?? "Fixed";
 
     // set the font size
-    // cesdk only supports a single font size for the entire content
-    const textFontSizeAttribute =
-      textProperties.EngineDict?.StyleRun?.RunArray[0]?.StyleSheet
-        ?.StyleSheetData?.FontSize ??
-      textProperties.ResourceDict?.StyleSheetSet[0]?.StyleSheetData?.FontSize ??
-      textProperties.DocumentResources?.StyleSheetSet[0]?.StyleSheetData
-        ?.FontSize;
+    // CE.SDK currently only supports a single font size for the entire content
+    const firstRunStyleSheet =
+      textProperties.EngineDict?.StyleRun?.RunArray[0].StyleSheet;
+    const textFontSizeAttribute = this.getTextValue(
+      textProperties,
+      firstRunStyleSheet?.StyleSheetData,
+      "FontSize"
+    );
     const textFontSize = this.scaleTextNumber(
       textFontSizeAttribute,
-      psdLayer.additionalProperties.TySh ?? null,
-      this.scaleFactor
+      psdLayer.additionalProperties.TySh ?? null
     );
     this.engine.block.setFloat(textBlock, "text/fontSize", textFontSize);
 
@@ -730,47 +669,27 @@ export class PSDParser {
     if (paragraphRunArray) {
       // extract justification from the first part
       const justification =
-        textProperties.EngineDict?.ParagraphRun?.RunArray[0]?.ParagraphSheet
-          ?.Properties?.Justification;
-      switch (justification) {
-        case 0:
-          this.engine.block.setEnum(
-            textBlock,
-            "text/horizontalAlignment",
-            "Left"
-          );
-          break;
-        case 2:
-          this.engine.block.setEnum(
-            textBlock,
-            "text/horizontalAlignment",
-            "Center"
-          );
-          break;
-        case 1:
-          this.engine.block.setEnum(
-            textBlock,
-            "text/horizontalAlignment",
-            "Right"
-          );
-          break;
-        // case "3" for "justified"
-      }
+        paragraphRunArray[0]?.ParagraphSheet?.Properties?.Justification;
+      const mapping: Record<string, string> = {
+        "0": "Left",
+        "1": "Right",
+        "2": "Center",
+        // "3": "Justified", // Justified is not supported in CE.SDK
+      };
+      const justificationValue = mapping[justification] ?? "Left";
+      this.engine.block.setEnum(
+        textBlock,
+        "text/horizontalAlignment",
+        justificationValue
+      );
     }
 
     // set text stroke color
     const textStrokeColor = this.getTextStrokeColor(textProperties, 0);
     if (textStrokeColor) {
-      const outlineWidth = textProperties.EngineDict?.StyleRun?.RunArray[0]
-        ?.StyleSheet?.StyleSheetData.OutlineWidth
-        ? textProperties.EngineDict?.StyleRun?.RunArray[0]?.StyleSheet
-            ?.StyleSheetData.OutlineWidth
-        : 1;
+      const outlineWidth = firstRunStyleSheet.StyleSheetData?.OutlineWidth ?? 1;
       this.engine.block.setStrokeEnabled(textBlock, true);
-      this.engine.block.setStrokeWidth(
-        textBlock,
-        outlineWidth / this.scaleFactor
-      );
+      this.engine.block.setStrokeWidth(textBlock, outlineWidth);
       this.engine.block.setStrokeColor(textBlock, {
         r: textStrokeColor.r / 255.0,
         g: textStrokeColor.g / 255.0,
@@ -779,16 +698,14 @@ export class PSDParser {
       });
     }
 
-    // calculate total letter spacing
-    let totalLetterSpacing = 0;
-    // add actual letter spacing (tracking)
-    totalLetterSpacing += letterSpacingAverage;
-    // add average kerning
-    totalLetterSpacing += kerningAverage;
+    // add average kerning and average letter spacing
+    const realLetterSpacing =
+      (letterSpacingSum / 10 / 100 + kerningSum / 10 / 100) /
+      textContent.length;
     this.engine.block.setFloat(
       textBlock,
       "text/letterSpacing",
-      totalLetterSpacing / 6 / this.scaleFactor
+      realLetterSpacing
     );
 
     // set line height
@@ -808,9 +725,6 @@ export class PSDParser {
     // Function to adjust text to fit on one line if necessary
     if (textBoxShape === "Auto" && this.flags.enableTextFitting) {
       await this.textFitting(textBlock);
-    }
-    if (this.flags.enableTextOneLineAlignmentFix) {
-      this.enableTextOneLineAlignmentFix(textBlock);
     }
     if (this.flags.enableTextVerticalAlignmentFix) {
       this.textVerticalAlignmentFix(textBlock);
@@ -852,7 +766,6 @@ export class PSDParser {
 
   private textVerticalAlignmentFix(textBlock: number) {
     const fontSize = this.engine.block.getFloat(textBlock, "text/fontSize");
-    const fontSizeInDesignUnit = this.fontSizeToInches(fontSize);
     const fontUri = this.engine.block.getString(textBlock, "text/fontFileUri");
     const fontInfo = fontInfoMap[fontUri];
     if (fontInfo) {
@@ -860,35 +773,12 @@ export class PSDParser {
       const offset =
         (((-fontInfo.descender + fontInfo.ascender - fontInfo.unitsPerEm) /
           fontInfo.unitsPerEm) *
-          fontSizeInDesignUnit) /
+          fontSize) /
         2;
       this.moveTextInTextDirection(textBlock, 0, -offset);
     }
   }
 
-  // This should not be applied in multiple lines text
-  private enableTextOneLineAlignmentFix(textBlock: number) {
-    const fontSize = this.engine.block.getFloat(textBlock, "text/fontSize");
-    const fontSizeInDesignUnit = this.fontSizeToInches(fontSize);
-    // Determine if text should be on one line based on frame height
-    const shouldBeOneLineText = (block: number): boolean => {
-      const frameHeight = this.engine.block.getFrameHeight(block);
-      // If frame height is less than twice the font size, it's likely a one-line text
-      return frameHeight < 2 * fontSizeInDesignUnit;
-    };
-    // Only if the text has a single line
-    if (shouldBeOneLineText(textBlock)) {
-      const frameHeight = this.engine.block.getFrameHeight(textBlock);
-      this.engine.block.setHeightMode(textBlock, "Auto");
-      const newFrameHeight = this.engine.block.getFrameHeight(textBlock);
-      // move block up by the difference
-      const diff = frameHeight - newFrameHeight;
-      const currentY = this.engine.block.getPositionY(textBlock);
-      this.engine.block.setPositionY(textBlock, currentY + diff);
-      this.engine.block.setHeightMode(textBlock, "Absolute");
-      this.engine.block.setHeight(textBlock, frameHeight);
-    }
-  }
   // Function to adjust text letter spacing up until a certain point to see if we can reduce a line
   private async textFitting(
     textBlock: number,
@@ -907,7 +797,6 @@ export class PSDParser {
     );
 
     const fontSize = this.engine.block.getFloat(textBlock, "text/fontSize");
-    const fontSizeInDesignUnit = this.fontSizeToInches(fontSize);
 
     // Function to check if the text block is overflowing
     // This is done by comparing the frame height in "auto" height mode to the real text block height
@@ -917,7 +806,7 @@ export class PSDParser {
     ): boolean => {
       const textBlockHeight = this.engine.block.getFrameHeight(textBlock);
       const isOverflowing =
-        textBlockHeight - realTextBlockHeight > fontSizeInDesignUnit / 2;
+        textBlockHeight - realTextBlockHeight > fontSize / 2;
       return isOverflowing;
     };
     const isPerfectFit = (
@@ -1012,11 +901,6 @@ export class PSDParser {
     this.engine.block.setHeight(textBlock, originalHeight);
   }
 
-  // Photoshop always uses 72 DPI for text size calculations
-  private fontSizeToInches(points: number): number {
-    return points / 72;
-  }
-
   private getTextFontSet(textProperties: TextProperties): TypefaceParams {
     let fontSet = textProperties.ResourceDict?.FontSet;
     if (!fontSet) {
@@ -1109,38 +993,36 @@ export class PSDParser {
     };
   }
 
-  private getTextFillColor(
+  private getStyleSheetColor = (
+    value:
+      | {
+          Values: number[];
+        }
+      | undefined
+      | null
+  ): RGBAColor | null => {
+    const color = value?.Values;
+    if (color) {
+      return { r: color[1], g: color[2], b: color[3], a: color[0] };
+    }
+    return null;
+  };
+
+  private getTextValue(
     textProperties: TextProperties,
-    index: number
-  ): RGBAColor | null {
-    if (
-      textProperties.EngineDict?.StyleRun?.RunArray[index]?.StyleSheet
-        ?.StyleSheetData?.FillColor?.Values
-    ) {
-      const color =
-        textProperties.EngineDict.StyleRun.RunArray[index].StyleSheet
-          .StyleSheetData.FillColor.Values;
-      return { r: color[1], g: color[2], b: color[3], a: color[0] };
-    }
-
-    if (
-      textProperties.ResourceDict?.StyleSheetSet[0]?.StyleSheetData?.FillColor
-        ?.Values
-    ) {
-      const color =
-        textProperties.ResourceDict.StyleSheetSet[0].StyleSheetData.FillColor
-          .Values;
-      return { r: color[1], g: color[2], b: color[3], a: color[0] };
-    }
-
-    if (
-      textProperties.DocumentResources?.StyleSheetSet[0]?.StyleSheetData
-        ?.FillColor?.Values
-    ) {
-      const color =
-        textProperties.DocumentResources.StyleSheetSet[0].StyleSheetData
-          .FillColor.Values;
-      return { r: color[1], g: color[2], b: color[3], a: color[0] };
+    styleRunStyleSheetData: any,
+    property: string
+  ): any | null {
+    const styleSheets = [
+      styleRunStyleSheetData,
+      textProperties.ResourceDict?.StyleSheetSet[0]?.StyleSheetData,
+      textProperties.DocumentResources?.StyleSheetSet[0]?.StyleSheetData,
+    ];
+    for (const styleSheet of styleSheets) {
+      const propertyValue = styleSheet?.[property];
+      if (propertyValue) {
+        return propertyValue;
+      }
     }
     return null;
   }
@@ -1273,10 +1155,10 @@ export class PSDParser {
     this.engine.block.insertChild(pageBlock, imageBlock, 0);
 
     // convert the image frame's dimensions from points to the CESDK design unit
-    const x = psdLayer.left / this.scaleFactor;
-    const y = psdLayer.top / this.scaleFactor;
-    const width = psdLayer.width / this.scaleFactor;
-    const height = psdLayer.height / this.scaleFactor;
+    const x = psdLayer.left;
+    const y = psdLayer.top;
+    const width = psdLayer.width;
+    const height = psdLayer.height;
 
     // set blend mode
     const blendMode = this.getBlendMode(psdLayer);
@@ -1301,8 +1183,8 @@ export class PSDParser {
     w: number,
     h: number
   ): string {
-    const aHoriz = (record.anchor.horiz * w) / this.scaleFactor;
-    const aVert = (record.anchor.vert * h) / this.scaleFactor;
+    const aHoriz = record.anchor.horiz * w;
+    const aVert = record.anchor.vert * h;
     return `M ${aHoriz},${aVert} `;
   }
 
@@ -1312,12 +1194,12 @@ export class PSDParser {
     w: number,
     h: number
   ): string {
-    const pHoriz = (previous.leaving.horiz * w) / this.scaleFactor;
-    const pVert = (previous.leaving.vert * h) / this.scaleFactor;
-    const aHoriz = (current.anchor.horiz * w) / this.scaleFactor;
-    const aVert = (current.anchor.vert * h) / this.scaleFactor;
-    const lHoriz = (current.preceding.horiz * w) / this.scaleFactor;
-    const lVert = (current.preceding.vert * h) / this.scaleFactor;
+    const pHoriz = previous.leaving.horiz * w;
+    const pVert = previous.leaving.vert * h;
+    const aHoriz = current.anchor.horiz * w;
+    const aVert = current.anchor.vert * h;
+    const lHoriz = current.preceding.horiz * w;
+    const lVert = current.preceding.vert * h;
     return `C ${pHoriz},${pVert} ${lHoriz},${lVert} ${aHoriz},${aVert} `;
   }
 
@@ -1330,8 +1212,8 @@ export class PSDParser {
     // must be the size of the whole image
     const x = 0;
     const y = 0;
-    const width = this.width / this.scaleFactor;
-    const height = this.height / this.scaleFactor;
+    const width = this.width;
+    const height = this.height;
 
     // set blend mode
     const blendMode = this.getBlendMode(psdLayer);
@@ -1340,10 +1222,10 @@ export class PSDParser {
     }
 
     // set layer position
-    this.engine.block.setPositionX(graphicBlock, x);
-    this.engine.block.setPositionY(graphicBlock, y);
-    this.engine.block.setWidth(graphicBlock, width);
-    this.engine.block.setHeight(graphicBlock, height);
+    this.engine.block.setPositionX(graphicBlock, psdLayer.left);
+    this.engine.block.setPositionY(graphicBlock, psdLayer.top);
+    this.engine.block.setWidth(graphicBlock, psdLayer.width);
+    this.engine.block.setHeight(graphicBlock, psdLayer.height);
 
     // apply rotation
     this.rotateBlock(graphicBlock, psdLayer);
@@ -1439,22 +1321,17 @@ export class PSDParser {
     // process path records
     let svgPath = this.buildShapeFromPathRecords(
       pathRecords,
-      psdLayer.width,
-      psdLayer.height
+      this.width,
+      this.height,
+      // We need to apply the offset to the path records. This moves all points to the top left corner
+      -(psdLayer.left / this.width),
+      -(psdLayer.top / this.height)
     );
 
     // set the vector path's path data, width, and height
     this.engine.block.setString(shape, "vector_path/path", svgPath);
-    this.engine.block.setFloat(
-      shape,
-      "vector_path/width",
-      psdLayer.width / this.scaleFactor
-    );
-    this.engine.block.setFloat(
-      shape,
-      "vector_path/height",
-      psdLayer.height / this.scaleFactor
-    );
+    this.engine.block.setFloat(shape, "vector_path/width", psdLayer.width);
+    this.engine.block.setFloat(shape, "vector_path/height", psdLayer.height);
 
     const gradient = psdLayer.additionalProperties.GdFl;
     if (gradient) {
@@ -1506,25 +1383,29 @@ export class PSDParser {
         );
       }
       // set vector stroke data
-      this.engine.block.setStrokeEnabled(graphicBlock, true);
-      this.engine.block.setStrokeWidth(
-        graphicBlock,
-        strokeWidth.value / this.scaleFactor
-      );
-      this.engine.block.setStrokeColor(graphicBlock, {
-        r,
-        g,
-        b,
-        a: strokeOpacity.value / 100.0,
-      });
+      const strokeEnabledFlag = vstk.data.descriptor.items.get(
+        "strokeEnabled"
+      ) as VectorBooleanTypeItem;
+      // get fill enabled flag
+      const fillEnabledFlag = vstk.data.descriptor.items.get(
+        "fillEnabled"
+      ) as VectorBooleanTypeItem;
+      // set fill enabled flag:
+      this.engine.block.setFillEnabled(graphicBlock, fillEnabledFlag.value);
+      this.engine.block.setStrokeEnabled(graphicBlock, strokeEnabledFlag.value);
+      this.engine.block.setStrokeWidth(graphicBlock, strokeWidth.value);
+      const color = { r, g, b, a: strokeOpacity.value / 100.0 };
+      this.engine.block.setStrokeColor(graphicBlock, color);
     }
     return graphicBlock;
   }
 
   private buildShapeFromPathRecords(
-    pathRecords: any,
+    pathRecords: PathRecord[],
     width: number,
-    height: number
+    height: number,
+    offsetX = 0,
+    offsetY = 0
   ) {
     let pathFillRule = false;
     let initialFillRule = false;
@@ -1535,6 +1416,34 @@ export class PSDParser {
 
     let svgPath = "";
     for (const record of pathRecords) {
+      // apply offsets and normalize values:
+      const normalize = (value: number) => {
+        // a 255 indicates a negative value
+        // get bitwise representation of the number
+        if (value < 200) {
+          return value;
+        }
+        return value - 256;
+      };
+      if ("anchor" in record && record.anchor !== null) {
+        record.anchor.horiz = normalize(record.anchor.horiz);
+        record.anchor.vert = normalize(record.anchor.vert);
+        record.anchor.horiz += offsetX;
+        record.anchor.vert += offsetY;
+      }
+      if ("leaving" in record && record.leaving !== null) {
+        record.leaving.horiz = normalize(record.leaving.horiz);
+        record.leaving.vert = normalize(record.leaving.vert);
+        record.leaving.horiz += offsetX;
+        record.leaving.vert += offsetY;
+      }
+      if ("preceding" in record && record.preceding !== null) {
+        record.preceding.horiz = normalize(record.preceding.horiz);
+        record.preceding.vert = normalize(record.preceding.vert);
+        record.preceding.horiz += offsetX;
+        record.preceding.vert += offsetY;
+      }
+
       switch (record.type) {
         case PathRecordType.ClosedSubpathBezierKnotLinked:
         case PathRecordType.ClosedSubpathBezierKnotUnlinked:
