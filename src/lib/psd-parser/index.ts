@@ -55,7 +55,6 @@ interface Flags {
   applyClipMasks: boolean;
   enableTextFitting: boolean;
   enableTextVerticalAlignmentFix: boolean;
-  enableTextOneLineAlignmentFix: boolean;
   enableTextTypefaceReachableCheck: boolean;
   enableCreateHiddenLayers: boolean;
   groupsEnabled: boolean;
@@ -63,7 +62,6 @@ interface Flags {
 const FlagDefaults: Flags = {
   applyClipMasks: true,
   enableTextFitting: true,
-  enableTextOneLineAlignmentFix: false,
   enableTextVerticalAlignmentFix: true,
   enableTextTypefaceReachableCheck: true,
   enableCreateHiddenLayers: false,
@@ -722,9 +720,6 @@ export class PSDParser {
     if (textBoxShape === "Auto" && this.flags.enableTextFitting) {
       await this.textFitting(textBlock);
     }
-    if (this.flags.enableTextOneLineAlignmentFix) {
-      this.enableTextOneLineAlignmentFix(textBlock);
-    }
     if (this.flags.enableTextVerticalAlignmentFix) {
       this.textVerticalAlignmentFix(textBlock);
     }
@@ -778,28 +773,6 @@ export class PSDParser {
     }
   }
 
-  // This should not be applied in multiple lines text
-  private enableTextOneLineAlignmentFix(textBlock: number) {
-    const fontSize = this.engine.block.getFloat(textBlock, "text/fontSize");
-    // Determine if text should be on one line based on frame height
-    const shouldBeOneLineText = (block: number): boolean => {
-      const frameHeight = this.engine.block.getFrameHeight(block);
-      // If frame height is less than twice the font size, it's likely a one-line text
-      return frameHeight < 2 * fontSize;
-    };
-    // Only if the text has a single line
-    if (shouldBeOneLineText(textBlock)) {
-      const frameHeight = this.engine.block.getFrameHeight(textBlock);
-      this.engine.block.setHeightMode(textBlock, "Auto");
-      const newFrameHeight = this.engine.block.getFrameHeight(textBlock);
-      // move block up by the difference
-      const diff = frameHeight - newFrameHeight;
-      const currentY = this.engine.block.getPositionY(textBlock);
-      this.engine.block.setPositionY(textBlock, currentY + diff);
-      this.engine.block.setHeightMode(textBlock, "Absolute");
-      this.engine.block.setHeight(textBlock, frameHeight);
-    }
-  }
   // Function to adjust text letter spacing up until a certain point to see if we can reduce a line
   private async textFitting(
     textBlock: number,
