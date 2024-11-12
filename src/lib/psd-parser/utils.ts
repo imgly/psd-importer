@@ -56,3 +56,51 @@ export async function waitUntilBlockIsReady(
     });
   }
 }
+
+interface CharacterReplacement {
+  index: number;
+  character: string;
+}
+// The CE.SDK supports a syntax of `{{variableName}}` for text variables inside text blocks.
+// This function replaces the curly braces so that it does not trigger the CE.SDK's text variable system.
+// Returns an array of character indices where curly braces were replaced.
+export function replaceTextVariables(
+  engine: CreativeEngine,
+  block: number,
+  replacementCharacter = "*"
+): CharacterReplacement[] {
+  let text = engine.block.getString(block, "text/text");
+  const indices: CharacterReplacement[] = [];
+
+  text = text.replace(/\{\{[^}]+\}\}/g, (match, offset) => {
+    indices.push({ index: offset, character: "{" });
+    indices.push({ index: offset + 1, character: "{" });
+    indices.push({ index: offset + match.length - 2, character: "}" });
+    indices.push({ index: offset + match.length - 1, character: "}" });
+    return `${replacementCharacter}${replacementCharacter}${match.slice(
+      2,
+      -2
+    )}${replacementCharacter}${replacementCharacter}`;
+  });
+
+  engine.block.setString(block, "text/text", text);
+  return indices.sort((a, b) => a.index - b.index);
+}
+// This function reverts the changes made by `replaceTextVariables` and restores the original text with text variables.
+export function revertReplaceTextVariables(
+  engine: CreativeEngine,
+  block: number,
+  indices: CharacterReplacement[]
+) {
+  let text = engine.block.getString(block, "text/text");
+
+  // We start from the end of the array to avoid changing the indices of the characters that come after the current character.
+  for (let i = indices.length - 1; i >= 0; i--) {
+    engine.block.replaceText(
+      block,
+      indices[i].character,
+      indices[i].index,
+      indices[i].index + 1
+    );
+  }
+}

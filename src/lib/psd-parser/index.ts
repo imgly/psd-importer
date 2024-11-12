@@ -34,7 +34,12 @@ import {
   VectorUnitTypeItem,
 } from "./interfaces";
 import { Logger } from "./logger";
-import { waitUntilBlockIsReady, webtoonToCesdkBlendMode } from "./utils";
+import {
+  replaceTextVariables,
+  revertReplaceTextVariables,
+  waitUntilBlockIsReady,
+  webtoonToCesdkBlendMode,
+} from "./utils";
 
 /**
  * The pixel scale factor used in the CESDK Editor
@@ -570,7 +575,10 @@ export class PSDParser {
     // Currently, the CE.SDK does not support kerning and letter spacing for text runs inside a text block.
     let kerningSum = 0;
     let letterSpacingSum = 0;
-
+    // Since we want to treat the text from Photoshop in the same way inside the CE.SDK,
+    // we need to "disable" the text variable system of the CE.SDK before applying any styling.
+    // Later, we "enable" text variables again by reverting the changes.
+    const replacedCharacters = replaceTextVariables(this.engine, textBlock);
     // check for style(s) of text content section(s)
     const styleRunLengthArray =
       textProperties.EngineDict?.StyleRun?.RunLengthArray;
@@ -721,6 +729,8 @@ export class PSDParser {
       }
       this.engine.block.setFloat(textBlock, "text/lineHeight", lineHeight);
     }
+    // enable text variables again:
+    revertReplaceTextVariables(this.engine, textBlock, replacedCharacters);
 
     // Function to adjust text to fit on one line if necessary
     if (textBoxShape === "Auto" && this.flags.enableTextFitting) {
