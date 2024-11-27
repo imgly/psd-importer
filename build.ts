@@ -21,19 +21,18 @@ async function generateDts(entry: string, outfile: string): Promise<void> {
 }
 
 // Build configuration for Node.js
-async function buildNode(): Promise<void> {
+async function buildCjs(): Promise<void> {
   try {
     await esbuild.build({
-      entryPoints: ["./entries/node.ts"],
+      entryPoints: ["./entries/index.ts"],
       bundle: true,
-      outfile: "./dist/node.js",
+      outfile: "./dist/index.cjs",
       format: "cjs",
       platform: "node",
       minify: true,
       target: ["node20"],
     });
     console.log("Node build complete");
-    await generateDts("./entries/node.ts", "./dist/node.d.ts");
   } catch (error) {
     console.error("Node build failed:", error);
   }
@@ -43,16 +42,16 @@ async function buildNode(): Promise<void> {
 async function buildBrowser(): Promise<void> {
   try {
     await esbuild.build({
-      entryPoints: ["./entries/browser.ts"],
+      entryPoints: ["./entries/index.ts"],
       bundle: true,
-      outfile: "./dist/browser.js",
+      outfile: "./dist/index.js",
       format: "esm",
       platform: "browser",
       minify: true,
       target: ["es2022"],
     });
     console.log("Browser build complete");
-    await generateDts("./entries/browser.ts", "./dist/browser.d.ts");
+    await generateDts("./entries/index.ts", "./dist/index.d.ts");
   } catch (error) {
     console.error("Browser build failed:", error);
   }
@@ -60,6 +59,6 @@ async function buildBrowser(): Promise<void> {
 
 // Run builds
 (async () => {
-  await buildNode();
+  await buildCjs();
   await buildBrowser();
 })();

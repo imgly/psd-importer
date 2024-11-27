@@ -1,8 +1,9 @@
 {
   "name": "@imgly/psd-importer",
-  "version": "0.0.3",
-  "module": "dist/browser.js",
-  "types": "dist/browser.d.ts",
+  "version": "0.0.4",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "main": "dist/index.cjs",
   "type": "module",
   "description": "Import PSD files into the Creative Editor Ecosystem",
   "keywords": [
@@ -38,8 +39,17 @@
     "pixelmatch": "^6.0.0"
   },
   "peerDependencies": {
-    "@cesdk/engine": "^1.30.0",
+    "@cesdk/engine": "^1.30.0 ",
+    "@cesdk/node": "1.38.0",
     "typescript": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@cesdk/engine": {
+      "optional": true
+    },
+    "@cesdk/node": {
+      "optional": true
+    }
   },
   "files": [
     "LICENSE.md",
@@ -61,14 +71,9 @@
   },
   "exports": {
     ".": {
-      "import": {
-        "types": "./dist/browser.d.ts",
-        "default": "./dist/browser.js"
-      },
-      "require": {
-        "types": "./dist/browser.d.ts",
-        "default": "./dist/browser.js"
-      }
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.js"
     }
   }
 }
