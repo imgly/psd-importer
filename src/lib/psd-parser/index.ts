@@ -153,6 +153,9 @@ export class PSDParser {
       if (psdNode.isHidden) {
         this.engine.block.setVisible(layerBlockId, false);
       }
+      if (this.engine.block.isValid(layerBlockId) && psdNode.name) {
+        this.engine.block.setName(layerBlockId, psdNode.name);
+      }
       // map the layers to their corresponding groups
       const groupId = (psdNode as unknown as PartialLayerFrame).layerFrame
         ?.layerProperties?.groupId;
