@@ -10,6 +10,7 @@ import Psd, {
   Group,
   Layer,
   Node,
+  NodeChild,
   NodeParent,
   PathRecordType,
 } from "@webtoon/psd";
@@ -63,6 +64,7 @@ interface Flags {
   enableTextVerticalAlignmentFix: boolean;
   enableTextTypefaceReachableCheck: boolean;
   enableCreateHiddenLayers: boolean;
+  enableTopLevelGroupsArePages: boolean;
   groupsEnabled: boolean;
 }
 const FlagDefaults: Flags = {
@@ -71,6 +73,7 @@ const FlagDefaults: Flags = {
   enableTextVerticalAlignmentFix: true,
   enableTextTypefaceReachableCheck: true,
   enableCreateHiddenLayers: false,
+  enableTopLevelGroupsArePages: false,
   groupsEnabled: false,
 };
 
@@ -85,7 +88,6 @@ export class PSDParser {
   private stack: number;
   private width: number;
   private height: number;
-  private page: number;
   private psd: Psd;
   private logger = new Logger();
   private fontResolver: TypefaceResolver;
@@ -107,7 +109,6 @@ export class PSDParser {
     this.stack = 0;
     this.width = 0;
     this.height = 0;
-    this.page = 0;
     this.psd = psd;
     this.fontResolver = options.fontResolver ?? defaultFontResolver;
     this.encodeBufferToPNG = encodeBufferToPNG!;
@@ -125,7 +126,7 @@ export class PSDParser {
     return new PSDParser(engine, psdFile, encodeBufferToPNG, options);
   }
 
-  private async traverseNode(psdNode: Node) {
+  private async traverseNode(psdNode: Node, page: number) {
     // handle PSD node types
     if (psdNode.type === "Layer") {
       let layerBlockId: number;
@@ -133,7 +134,7 @@ export class PSDParser {
       if (psdNode.isHidden && !this.flags.enableCreateHiddenLayers) return;
 
       if (psdNode.text) {
-        layerBlockId = await this.createTextBlock(this.page, psdNode);
+        layerBlockId = await this.createTextBlock(page, psdNode);
       } else {
         if (
           psdNode.additionalProperties.vmsk ||
@@ -141,11 +142,15 @@ export class PSDParser {
           psdNode.additionalProperties.vsms ||
           psdNode.additionalProperties.vstk
         ) {
-          layerBlockId = await this.createVectorBlock(this.page, psdNode);
+          layerBlockId = await this.createVectorBlock(page, psdNode);
         } else {
-          layerBlockId = await this.createImageBlock(this.page, psdNode);
+          layerBlockId = await this.createImageBlock(page, psdNode);
           if (this.flags.applyClipMasks) {
-            layerBlockId = this.applyParentClipMasks(psdNode, layerBlockId);
+            layerBlockId = this.applyParentClipMasks(
+              psdNode,
+              layerBlockId,
+              page
+            );
           }
         }
       }
@@ -184,12 +189,16 @@ export class PSDParser {
 
     if (psdNode.children) {
       for (const child of psdNode.children) {
-        await this.traverseNode(child);
+        await this.traverseNode(child, page);
       }
     }
   }
 
-  private applyParentClipMasks(psdNode: Layer, block: number): number {
+  private applyParentClipMasks(
+    psdNode: Layer,
+    block: number,
+    page: number
+  ): number {
     const masks = [];
     let currentParent: NodeParent | undefined = psdNode.parent;
     // First we gather all the clip masks from the parent hierarchy
@@ -197,7 +206,7 @@ export class PSDParser {
       const currentNode = currentParent as Group;
       currentParent = currentParent.parent;
       if (currentNode.type === "Group") {
-        const maskBlock = this.createClipMaskLayer(currentNode);
+        const maskBlock = this.createClipMaskLayer(currentNode, page);
         if (maskBlock) {
           masks.push(maskBlock);
         }
@@ -242,7 +251,10 @@ export class PSDParser {
    * @param psdNode The PSD node to extract the clip mask from
    * @returns A graphic block with the shape of the clip mask or null if no clip mask is present
    */
-  private createClipMaskLayer(psdNode: Layer | Group): number | null {
+  private createClipMaskLayer(
+    psdNode: Layer | Group,
+    page: number
+  ): number | null {
     const mask = psdNode.additionalProperties?.vmsk;
 
     // @ts-ignore
@@ -288,7 +300,7 @@ export class PSDParser {
     this.engine.block.setFloat(shape, "vector_path/width", width);
     this.engine.block.setFloat(shape, "vector_path/height", height);
     // append child to the page
-    this.engine.block.appendChild(this.page, graphicBlock);
+    this.engine.block.appendChild(page, graphicBlock);
     return graphicBlock;
   }
 
@@ -319,9 +331,33 @@ export class PSDParser {
 
     await this.initScene();
 
-    await this.createPage(this.stack);
+    // We store which root element should be rendered on which page.
+    // Normally, we would only have one page, but if the PSD file has top-level groups,
+    // we support workflows to create a page for each top-level group.
+    let pageRoots: {
+      page: number;
+      root: NodeChild | Psd;
+    }[] = [];
 
-    await this.traverseNode(this.psd);
+    if (this.flags.enableTopLevelGroupsArePages) {
+      //  Get all top level groups
+      const topLevelGroups = this.psd.children.filter(
+        (child) => child.type === "Group"
+      );
+      await Promise.all(
+        topLevelGroups.map(async (group) => {
+          const page = await this.createPage(this.stack);
+          pageRoots.push({ page, root: group });
+        })
+      );
+    } else {
+      const page = await this.createPage(this.stack);
+      pageRoots.push({ page, root: this.psd });
+    }
+    for (let i = 0; i < pageRoots.length; i++) {
+      const { page, root } = pageRoots[i];
+      await this.traverseNode(root, page);
+    }
 
     if (this.flags.groupsEnabled) {
       await this.createGroups(this.groups);
@@ -378,7 +414,7 @@ export class PSDParser {
     // append the page block to the stack block
     this.engine.block.appendChild(stack, pageBlock);
 
-    this.page = pageBlock;
+    return pageBlock;
   }
 
   private applyTreeOpacity(block: number, psdLayer: Layer): number {
