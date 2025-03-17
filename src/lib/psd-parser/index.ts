@@ -744,6 +744,21 @@ export class PSDParser {
       });
     }
 
+    const fontSizes = styleRunLengthArray?.map((len, index) => {
+      const styleRun = textProperties.EngineDict?.StyleRun?.RunArray[index];
+      const styleSheetData = styleRun?.StyleSheet?.StyleSheetData;
+      return this.getTextValue(textProperties, styleSheetData, "FontSize");
+    });
+    const fontSizeSet = new Set(fontSizes);
+    if (fontSizeSet.size > 1) {
+      this.logger.log(
+        `Text '${psdLayer.name}' has multiple different text sizes inside the style runs. ` +
+          `This is currently not supported by the CE.SDK. ` +
+          `The text will be rendered with the first font size found.`,
+        "warning"
+      );
+    }
+
     const TEXT_SHAPE_TYPES: Record<string, "Fixed" | "Auto"> = {
       "1": "Fixed",
       "0": "Auto",
