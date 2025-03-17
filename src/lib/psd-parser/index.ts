@@ -122,8 +122,14 @@ export class PSDParser {
     encodeBufferToPNG: EncodeBufferToPNG,
     options: Partial<Options> = {}
   ) {
-    const psdFile = Psd.parse(fileBuffer);
-    return new PSDParser(engine, psdFile, encodeBufferToPNG, options);
+    try {
+      const psdFile = Psd.parse(fileBuffer);
+      return new PSDParser(engine, psdFile, encodeBufferToPNG, options);
+    } catch (error) {
+      throw new Error(
+        `Error occurred during parsing the PSD file: ${error}. This file can not be imported.`
+      );
+    }
   }
 
   private async traverseNode(psdNode: Node, page: number) {
