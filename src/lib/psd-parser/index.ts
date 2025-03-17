@@ -588,6 +588,14 @@ export class PSDParser {
       const right = extractBoundsValue("Rght", TySh);
       const bottom = extractBoundsValue("Btom", TySh);
 
+      if (left === undefined || top === undefined || right === undefined) {
+        this.logger.log(
+          `Could not extract bounds values from text block '${psdLayer.name}'. This could indicate an issue with the file. Please try to re-save the file from Photoshop.`,
+          "error"
+        );
+        return textBlock;
+      }
+
       function applyTransform(
         x: number,
         y: number,
