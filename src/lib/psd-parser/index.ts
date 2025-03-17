@@ -136,6 +136,7 @@ export class PSDParser {
       if (psdNode.text) {
         layerBlockId = await this.createTextBlock(page, psdNode);
       } else {
+        await this.checkUnsupportedLayerFeatures(psdNode);
         if (
           psdNode.additionalProperties.vmsk ||
           psdNode.additionalProperties.vscg ||
@@ -191,6 +192,23 @@ export class PSDParser {
       for (const child of psdNode.children) {
         await this.traverseNode(child, page);
       }
+    }
+  }
+
+  private async checkUnsupportedLayerFeatures(psdNode: Layer) {
+    if (psdNode.additionalProperties.lfx2) {
+      this.logger.log(
+        `Layer '${psdNode.name}' has layer effects, which are not supported.`,
+        "warning"
+      );
+    }
+
+    const userMask = await psdNode.userMask();
+    if (userMask) {
+      this.logger.log(
+        `Layer '${psdNode.name}' has a layer mask, which is not supported.`,
+        "warning"
+      );
     }
   }
 
