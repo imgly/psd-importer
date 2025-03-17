@@ -216,6 +216,15 @@ export class PSDParser {
         "warning"
       );
     }
+    const hasMask =
+      // @ts-ignore
+      ((psdNode as Layer).layerFrame?.layerProperties?.clippingMask ?? 0) !== 0;
+    if (hasMask) {
+      this.logger.log(
+        `Layer '${psdNode.name}' has a clipping mask, which is not supported.`,
+        "warning"
+      );
+    }
   }
 
   private applyParentClipMasks(
