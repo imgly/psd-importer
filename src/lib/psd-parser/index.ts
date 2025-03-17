@@ -1,6 +1,8 @@
 import type CreativeEngine from "@cesdk/engine";
 import {
   BlendMode,
+  CMYKColor,
+  Color,
   FontStyle,
   FontWeight,
   RGBAColor,
@@ -29,7 +31,6 @@ import {
   StyleSheetData,
   TextProperties,
   VectorBooleanTypeItem,
-  VectorNumberTypeItem,
   VectorObjectTypeItem,
   VectorPathRecordItem,
   VectorUnitTypeItem,
@@ -1116,14 +1117,29 @@ export class PSDParser {
   private getStyleSheetColor = (
     value:
       | {
+          Type: number;
           Values: number[];
         }
       | undefined
       | null
-  ): RGBAColor | null => {
+  ): Color | null => {
     const color = value?.Values;
-    if (color) {
+    if (!color) return null;
+
+    // RGBA
+    if (value.Type === 1) {
       return { r: color[1], g: color[2], b: color[3], a: color[0] };
+    } else if (value.Type === 2) {
+      // CMYK
+      // This does not work:
+      // const tint = color[0];
+      const tint = 1;
+      const c = color[1];
+      const m = color[2];
+      const y = color[3];
+      const k = color[4];
+      const convertedColor: CMYKColor = { c, m, y, k, tint };
+      return convertedColor;
     }
     return null;
   };
@@ -1244,13 +1260,16 @@ export class PSDParser {
     let bgColor = undefined;
     if (SoCo) {
       const clr_ = SoCo.data.items.get("Clr ") as VectorObjectTypeItem;
-      const { r, g, b } = parseColor(clr_) ?? { r: 0, g: 0, b: 0 };
-      bgColor = {
-        r: r * 255,
-        g: g * 255,
-        b: b * 255,
-        a: 255,
-      };
+      const color = parseColor(clr_) ?? { r: 0, g: 0, b: 0, a: 1 };
+      // only if we have an RGB color:
+      if ("r" in color && "g" in color && "b" in color && "a" in color) {
+        bgColor = {
+          r: color.r * 255,
+          g: color.g * 255,
+          b: color.b * 255,
+          a: color.a * 255,
+        };
+      }
     }
 
     const imgBlob = await this.encodeBufferToPNG(
@@ -1375,13 +1394,16 @@ export class PSDParser {
       let bgColor = undefined;
       if (SoCo) {
         const clr_ = SoCo.data.items.get("Clr ") as VectorObjectTypeItem;
-        const { r, g, b } = parseColor(clr_) ?? { r: 0, g: 0, b: 0 };
-        bgColor = {
-          r: r * 255,
-          g: g * 255,
-          b: b * 255,
-          a: 255,
-        };
+        const color = parseColor(clr_) ?? { r: 0, g: 0, b: 0, a: 1 };
+        // only if we have an RGB color:
+        if ("r" in color && "g" in color && "b" in color && "a" in color) {
+          bgColor = {
+            r: color.r * 255,
+            g: color.g * 255,
+            b: color.b * 255,
+            a: color.a * 255,
+          };
+        }
       }
 
       const imgBlob = await this.encodeBufferToPNG(
@@ -1409,14 +1431,7 @@ export class PSDParser {
       const clr_ = vscg.data.descriptor.items.get(
         "Clr "
       ) as VectorObjectTypeItem;
-      const red = clr_.descriptor.items.get("Rd  ") as VectorNumberTypeItem;
-      const green = clr_.descriptor.items.get("Grn ") as VectorNumberTypeItem;
-      const blue = clr_.descriptor.items.get("Bl  ") as VectorNumberTypeItem;
-      color.r = red.value / 255.0;
-      color.g = green.value / 255.0;
-      color.b = blue.value / 255.0;
-      color.a = 1;
-
+      const color = parseColor(clr_) ?? { r: 0, g: 0, b: 0, a: 1 };
       if (psdLayer.additionalProperties.vsms) {
         // handling vector mask setting
         const vsms = psdLayer.additionalProperties.vsms;
@@ -1480,27 +1495,10 @@ export class PSDParser {
       const clr__ = strokeStyle.descriptor.items.get(
         "Clr "
       ) as VectorObjectTypeItem;
-      const redItem = clr__.descriptor.items.get(
-        "Rd  "
-      ) as VectorNumberTypeItem;
-      const greenItem = clr__.descriptor.items.get(
-        "Grn "
-      ) as VectorNumberTypeItem;
-      const blueItem = clr__.descriptor.items.get(
-        "Bl  "
-      ) as VectorNumberTypeItem;
-      let r = 1;
-      let g = 1;
-      let b = 1;
-      if (redItem && greenItem && blueItem) {
-        r = redItem.value / 255.0;
-        g = greenItem.value / 255.0;
-        b = blueItem.value / 255.0;
-      } else {
-        this.logger.log(
-          "Vector stroke color not found for the vector stroke",
-          "warning"
-        );
+      let color = parseColor(clr__);
+      if (!color) {
+        this.logger.log("Could not parse color for stroke", "warning");
+        color = { r: 0, g: 0, b: 0, a: 1 };
       }
       // set vector stroke data
       const strokeEnabledFlag = vstk.data.descriptor.items.get(
@@ -1514,7 +1512,9 @@ export class PSDParser {
       this.engine.block.setFillEnabled(graphicBlock, fillEnabledFlag.value);
       this.engine.block.setStrokeEnabled(graphicBlock, strokeEnabledFlag.value);
       this.engine.block.setStrokeWidth(graphicBlock, strokeWidth.value);
-      const color = { r, g, b, a: strokeOpacity.value / 100.0 };
+      if ("a" in color) {
+        color.a = strokeOpacity.value / 100.0;
+      }
       this.engine.block.setStrokeColor(graphicBlock, color);
     }
     return graphicBlock;
