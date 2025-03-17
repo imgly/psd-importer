@@ -1617,8 +1617,13 @@ export class PSDParser {
   private getBlendMode(psdLayer: Layer): BlendMode | null {
     const privateLayer = psdLayer as any; // bypass type checking
     const blendMode = privateLayer.layerFrame?.layerProperties?.blendMode;
-    return webtoonToCesdkBlendMode[blendMode] || null;
+    const convertedBlendMode = webtoonToCesdkBlendMode[blendMode] ?? null;
+    if (convertedBlendMode === null) {
+      this.logger.log(
+        `Blend mode '${blendMode}' is not supported in CE.SDK, using the default blend mode`,
+        "warning"
+      );
+    }
+    return convertedBlendMode;
   }
-
-  // end of class
 }
