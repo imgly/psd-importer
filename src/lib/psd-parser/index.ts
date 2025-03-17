@@ -139,10 +139,10 @@ export class PSDParser {
 
       if (psdNode.isHidden && !this.flags.enableCreateHiddenLayers) return;
 
+      await this.checkUnsupportedLayerFeatures(psdNode);
       if (psdNode.text) {
         layerBlockId = await this.createTextBlock(page, psdNode);
       } else {
-        await this.checkUnsupportedLayerFeatures(psdNode);
         if (
           psdNode.additionalProperties.vmsk ||
           psdNode.additionalProperties.vscg ||
@@ -443,13 +443,18 @@ export class PSDParser {
 
   private applyTreeOpacity(block: number, psdLayer: Layer): number {
     // opacity inside psd is in the range of 0-255, while in the CE.SDK it is in the range of 0-1
-    let opacity = psdLayer.opacity / 255;
+    let blendModeFillOpacity = this.getBlendModeFillOpacity(psdLayer) / 255;
+    let layerOpacity = psdLayer.opacity / 255;
+    // This is not fully correct, since blend mode fill is applied differently than the layer opacity in PhotoShop.
+    // However, this is the best approximation we can do.
+    let opacity = blendModeFillOpacity * layerOpacity;
 
     // If we have an image fill, then we should only take in parents opacity into account
     // The image fill will be already reflect the layer opacity
+    // Blend mode fill opacity should be taken into account
     const fill = this.engine.block.getFill(block);
     if (this.engine.block.getType(fill) === "//ly.img.ubq/fill/image") {
-      opacity = 1;
+      opacity = blendModeFillOpacity;
     }
 
     let parent: NodeParent | undefined = psdLayer.parent;
@@ -1612,6 +1617,22 @@ export class PSDParser {
     if (angleRadians) {
       this.engine.block.setRotation(block, angleRadians);
     }
+  }
+
+  private getBlendModeFillOpacity(psdLayer: Layer): number {
+    const blendOptions = psdLayer.additionalProperties["iOpa"];
+    if (!blendOptions) return 255;
+
+    const blendFillOpacity = blendOptions.fillOpacity ?? 255;
+    // if the opacity is 0, we should warn the user
+    if (blendFillOpacity === 0) {
+      this.logger.log(
+        `The fill opacity of the layer "${psdLayer.name}" was set to 0. This would make the layer invisible. We made this Layer fully visible for easier editing.`,
+        "warning"
+      );
+      return 255;
+    }
+    return blendFillOpacity;
   }
 
   private getBlendMode(psdLayer: Layer): BlendMode | null {
