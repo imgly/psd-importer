@@ -657,12 +657,30 @@ export class PSDParser {
 
         // apply bold
         if (styleSheetData.FauxBold) {
-          this.engine.block.toggleBoldFont(textBlock, from, to);
+          if (this.engine.block.canToggleBoldFont(textBlock, from, to)) {
+            this.engine.block.toggleBoldFont(textBlock, from, to);
+          } else {
+            this.logger.log(
+              `Could not make text "${
+                textContent.substring(from, to).trim().slice(0, 10) + "..."
+              }" bold. This might be due to a missing bold version of the font.`,
+              "error"
+            );
+          }
         }
 
         // apply italic
         if (styleSheetData.FauxItalic) {
-          this.engine.block.toggleItalicFont(textBlock, from, to);
+          if (this.engine.block.canToggleItalicFont(textBlock, from, to)) {
+            this.engine.block.toggleItalicFont(textBlock, from, to);
+          } else {
+            this.logger.log(
+              `Could not make text "${
+                textContent.substring(from, to).trim().slice(0, 10) + "..."
+              })" italic. This might be due to a missing italic version of the font.`,
+              "error"
+            );
+          }
         }
 
         // set text fill color
