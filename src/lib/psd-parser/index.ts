@@ -1,6 +1,8 @@
 import type CreativeEngine from "@cesdk/engine";
 import {
   BlendMode,
+  CMYKColor,
+  Color,
   FontStyle,
   FontWeight,
   RGBAColor,
@@ -29,7 +31,6 @@ import {
   StyleSheetData,
   TextProperties,
   VectorBooleanTypeItem,
-  VectorNumberTypeItem,
   VectorObjectTypeItem,
   VectorPathRecordItem,
   VectorUnitTypeItem,
@@ -122,8 +123,14 @@ export class PSDParser {
     encodeBufferToPNG: EncodeBufferToPNG,
     options: Partial<Options> = {}
   ) {
-    const psdFile = Psd.parse(fileBuffer);
-    return new PSDParser(engine, psdFile, encodeBufferToPNG, options);
+    try {
+      const psdFile = Psd.parse(fileBuffer);
+      return new PSDParser(engine, psdFile, encodeBufferToPNG, options);
+    } catch (error) {
+      throw new Error(
+        `Error occurred during parsing the PSD file: ${error}. This file can not be imported.`
+      );
+    }
   }
 
   private async traverseNode(psdNode: Node, page: number) {
@@ -133,6 +140,7 @@ export class PSDParser {
 
       if (psdNode.isHidden && !this.flags.enableCreateHiddenLayers) return;
 
+      await this.checkUnsupportedLayerFeatures(psdNode);
       if (psdNode.text) {
         layerBlockId = await this.createTextBlock(page, psdNode);
       } else {
@@ -191,6 +199,32 @@ export class PSDParser {
       for (const child of psdNode.children) {
         await this.traverseNode(child, page);
       }
+    }
+  }
+
+  private async checkUnsupportedLayerFeatures(psdNode: Layer) {
+    if (psdNode.additionalProperties.lfx2) {
+      this.logger.log(
+        `Layer '${psdNode.name}' has layer effects, which are not supported.`,
+        "warning"
+      );
+    }
+
+    const userMask = await psdNode.userMask();
+    if (userMask) {
+      this.logger.log(
+        `Layer '${psdNode.name}' has a layer mask, which is not supported.`,
+        "warning"
+      );
+    }
+    const hasMask =
+      // @ts-ignore
+      ((psdNode as Layer).layerFrame?.layerProperties?.clippingMask ?? 0) !== 0;
+    if (hasMask) {
+      this.logger.log(
+        `Layer '${psdNode.name}' has a clipping mask, which is not supported.`,
+        "warning"
+      );
     }
   }
 
@@ -419,13 +453,18 @@ export class PSDParser {
 
   private applyTreeOpacity(block: number, psdLayer: Layer): number {
     // opacity inside psd is in the range of 0-255, while in the CE.SDK it is in the range of 0-1
-    let opacity = psdLayer.opacity / 255;
+    let blendModeFillOpacity = this.getBlendModeFillOpacity(psdLayer) / 255;
+    let layerOpacity = psdLayer.opacity / 255;
+    // This is not fully correct, since blend mode fill is applied differently than the layer opacity in PhotoShop.
+    // However, this is the best approximation we can do.
+    let opacity = blendModeFillOpacity * layerOpacity;
 
     // If we have an image fill, then we should only take in parents opacity into account
     // The image fill will be already reflect the layer opacity
+    // Blend mode fill opacity should be taken into account
     const fill = this.engine.block.getFill(block);
     if (this.engine.block.getType(fill) === "//ly.img.ubq/fill/image") {
-      opacity = 1;
+      opacity = blendModeFillOpacity;
     }
 
     let parent: NodeParent | undefined = psdLayer.parent;
@@ -549,6 +588,14 @@ export class PSDParser {
       const right = extractBoundsValue("Rght", TySh);
       const bottom = extractBoundsValue("Btom", TySh);
 
+      if (left === undefined || top === undefined || right === undefined) {
+        this.logger.log(
+          `Could not extract bounds values from text block '${psdLayer.name}'. This could indicate an issue with the file. Please try to re-save the file from Photoshop.`,
+          "error"
+        );
+        return textBlock;
+      }
+
       function applyTransform(
         x: number,
         y: number,
@@ -657,12 +704,30 @@ export class PSDParser {
 
         // apply bold
         if (styleSheetData.FauxBold) {
-          this.engine.block.toggleBoldFont(textBlock, from, to);
+          if (this.engine.block.canToggleBoldFont(textBlock, from, to)) {
+            this.engine.block.toggleBoldFont(textBlock, from, to);
+          } else {
+            this.logger.log(
+              `Could not make text "${
+                textContent.substring(from, to).trim().slice(0, 10) + "..."
+              }" bold. This might be due to a missing bold version of the font.`,
+              "error"
+            );
+          }
         }
 
         // apply italic
         if (styleSheetData.FauxItalic) {
-          this.engine.block.toggleItalicFont(textBlock, from, to);
+          if (this.engine.block.canToggleItalicFont(textBlock, from, to)) {
+            this.engine.block.toggleItalicFont(textBlock, from, to);
+          } else {
+            this.logger.log(
+              `Could not make text "${
+                textContent.substring(from, to).trim().slice(0, 10) + "..."
+              })" italic. This might be due to a missing italic version of the font.`,
+              "error"
+            );
+          }
         }
 
         // set text fill color
@@ -686,6 +751,21 @@ export class PSDParser {
         // accumulate kerning
         kerningSum = (styleSheetData.Kerning ?? 0) * (to - from);
       });
+    }
+
+    const fontSizes = styleRunLengthArray?.map((len, index) => {
+      const styleRun = textProperties.EngineDict?.StyleRun?.RunArray[index];
+      const styleSheetData = styleRun?.StyleSheet?.StyleSheetData;
+      return this.getTextValue(textProperties, styleSheetData, "FontSize");
+    });
+    const fontSizeSet = new Set(fontSizes);
+    if (fontSizeSet.size > 1) {
+      this.logger.log(
+        `Text '${psdLayer.name}' has multiple different text sizes inside the style runs. ` +
+          `This is currently not supported by the CE.SDK. ` +
+          `The text will be rendered with the first font size found.`,
+        "warning"
+      );
     }
 
     const TEXT_SHAPE_TYPES: Record<string, "Fixed" | "Auto"> = {
@@ -1045,14 +1125,29 @@ export class PSDParser {
   private getStyleSheetColor = (
     value:
       | {
+          Type: number;
           Values: number[];
         }
       | undefined
       | null
-  ): RGBAColor | null => {
+  ): Color | null => {
     const color = value?.Values;
-    if (color) {
+    if (!color) return null;
+
+    // RGBA
+    if (value.Type === 1) {
       return { r: color[1], g: color[2], b: color[3], a: color[0] };
+    } else if (value.Type === 2) {
+      // CMYK
+      // This does not work:
+      // const tint = color[0];
+      const tint = 1;
+      const c = color[1];
+      const m = color[2];
+      const y = color[3];
+      const k = color[4];
+      const convertedColor: CMYKColor = { c, m, y, k, tint };
+      return convertedColor;
     }
     return null;
   };
@@ -1127,7 +1222,8 @@ export class PSDParser {
   }
 
   private getLineHeight(textProperties: TextProperties): number {
-    const DEFAULT_LINE_HEIGHT = 1.2;
+    const DEFAULT_LINE_HEIGHT_FACTOR = 1.2;
+
     const stylesheet =
       textProperties.EngineDict?.StyleRun?.RunArray[0]?.StyleSheet
         .StyleSheetData;
@@ -1135,15 +1231,30 @@ export class PSDParser {
       const firstParagraphRun =
         textProperties.EngineDict?.ParagraphRun?.RunArray[0];
       const autoLeading =
-        firstParagraphRun?.ParagraphSheet?.Properties?.AutoLeading ??
-        DEFAULT_LINE_HEIGHT;
-      return autoLeading;
+        firstParagraphRun?.ParagraphSheet?.Properties?.AutoLeading;
+      if (autoLeading !== undefined) return autoLeading;
+
+      this.logger.log(
+        `Could not extract auto leading from text block. Using default line height of ${DEFAULT_LINE_HEIGHT_FACTOR}`,
+        "warning"
+      );
+      return DEFAULT_LINE_HEIGHT_FACTOR;
     }
-    let lineHeight = stylesheet?.Leading / stylesheet.FontSize;
+    let lineHeight = DEFAULT_LINE_HEIGHT_FACTOR;
+    if (
+      stylesheet?.Leading === undefined ||
+      stylesheet?.FontSize === undefined
+    ) {
+      this.logger.log(
+        `Could not extract line height from text block. Using default line height of ${DEFAULT_LINE_HEIGHT_FACTOR}`,
+        "warning"
+      );
+      return DEFAULT_LINE_HEIGHT_FACTOR;
+    }
+    lineHeight = stylesheet.Leading / stylesheet.FontSize;
     // If we have a line height that is too small to make sense, it indicates that the line height is set incorrectly in the PSD.
     // We thus set it to a default value line height value
     if (lineHeight < 0.6) {
-      lineHeight = 1.2;
       const textContent = this.engine.block.getString(
         this.engine.block.create("//ly.img.ubq/text"),
         "text/text"
@@ -1157,6 +1268,7 @@ export class PSDParser {
         `Line height of block with text "${shortTextContent}" is too small. Setting to default value.`,
         "warning"
       );
+      return DEFAULT_LINE_HEIGHT_FACTOR;
     }
     return lineHeight;
   }
@@ -1173,13 +1285,16 @@ export class PSDParser {
     let bgColor = undefined;
     if (SoCo) {
       const clr_ = SoCo.data.items.get("Clr ") as VectorObjectTypeItem;
-      const { r, g, b } = parseColor(clr_) ?? { r: 0, g: 0, b: 0 };
-      bgColor = {
-        r: r * 255,
-        g: g * 255,
-        b: b * 255,
-        a: 255,
-      };
+      const color = parseColor(clr_) ?? { r: 0, g: 0, b: 0, a: 1 };
+      // only if we have an RGB color:
+      if ("r" in color && "g" in color && "b" in color && "a" in color) {
+        bgColor = {
+          r: color.r * 255,
+          g: color.g * 255,
+          b: color.b * 255,
+          a: color.a * 255,
+        };
+      }
     }
 
     const imgBlob = await this.encodeBufferToPNG(
@@ -1304,13 +1419,16 @@ export class PSDParser {
       let bgColor = undefined;
       if (SoCo) {
         const clr_ = SoCo.data.items.get("Clr ") as VectorObjectTypeItem;
-        const { r, g, b } = parseColor(clr_) ?? { r: 0, g: 0, b: 0 };
-        bgColor = {
-          r: r * 255,
-          g: g * 255,
-          b: b * 255,
-          a: 255,
-        };
+        const color = parseColor(clr_) ?? { r: 0, g: 0, b: 0, a: 1 };
+        // only if we have an RGB color:
+        if ("r" in color && "g" in color && "b" in color && "a" in color) {
+          bgColor = {
+            r: color.r * 255,
+            g: color.g * 255,
+            b: color.b * 255,
+            a: color.a * 255,
+          };
+        }
       }
 
       const imgBlob = await this.encodeBufferToPNG(
@@ -1338,14 +1456,7 @@ export class PSDParser {
       const clr_ = vscg.data.descriptor.items.get(
         "Clr "
       ) as VectorObjectTypeItem;
-      const red = clr_.descriptor.items.get("Rd  ") as VectorNumberTypeItem;
-      const green = clr_.descriptor.items.get("Grn ") as VectorNumberTypeItem;
-      const blue = clr_.descriptor.items.get("Bl  ") as VectorNumberTypeItem;
-      color.r = red.value / 255.0;
-      color.g = green.value / 255.0;
-      color.b = blue.value / 255.0;
-      color.a = 1;
-
+      const color = parseColor(clr_) ?? { r: 0, g: 0, b: 0, a: 1 };
       if (psdLayer.additionalProperties.vsms) {
         // handling vector mask setting
         const vsms = psdLayer.additionalProperties.vsms;
@@ -1409,27 +1520,10 @@ export class PSDParser {
       const clr__ = strokeStyle.descriptor.items.get(
         "Clr "
       ) as VectorObjectTypeItem;
-      const redItem = clr__.descriptor.items.get(
-        "Rd  "
-      ) as VectorNumberTypeItem;
-      const greenItem = clr__.descriptor.items.get(
-        "Grn "
-      ) as VectorNumberTypeItem;
-      const blueItem = clr__.descriptor.items.get(
-        "Bl  "
-      ) as VectorNumberTypeItem;
-      let r = 1;
-      let g = 1;
-      let b = 1;
-      if (redItem && greenItem && blueItem) {
-        r = redItem.value / 255.0;
-        g = greenItem.value / 255.0;
-        b = blueItem.value / 255.0;
-      } else {
-        this.logger.log(
-          "Vector stroke color not found for the vector stroke",
-          "warning"
-        );
+      let color = parseColor(clr__);
+      if (!color) {
+        this.logger.log("Could not parse color for stroke", "warning");
+        color = { r: 0, g: 0, b: 0, a: 1 };
       }
       // set vector stroke data
       const strokeEnabledFlag = vstk.data.descriptor.items.get(
@@ -1443,7 +1537,9 @@ export class PSDParser {
       this.engine.block.setFillEnabled(graphicBlock, fillEnabledFlag.value);
       this.engine.block.setStrokeEnabled(graphicBlock, strokeEnabledFlag.value);
       this.engine.block.setStrokeWidth(graphicBlock, strokeWidth.value);
-      const color = { r, g, b, a: strokeOpacity.value / 100.0 };
+      if ("a" in color) {
+        color.a = strokeOpacity.value / 100.0;
+      }
       this.engine.block.setStrokeColor(graphicBlock, color);
     }
     return graphicBlock;
@@ -1572,11 +1668,32 @@ export class PSDParser {
     }
   }
 
+  private getBlendModeFillOpacity(psdLayer: Layer): number {
+    const blendOptions = psdLayer.additionalProperties["iOpa"];
+    if (!blendOptions) return 255;
+
+    const blendFillOpacity = blendOptions.fillOpacity ?? 255;
+    // if the opacity is 0, we should warn the user
+    if (blendFillOpacity === 0) {
+      this.logger.log(
+        `The fill opacity of the layer "${psdLayer.name}" was set to 0. This would make the layer invisible. We made this Layer fully visible for easier editing.`,
+        "warning"
+      );
+      return 255;
+    }
+    return blendFillOpacity;
+  }
+
   private getBlendMode(psdLayer: Layer): BlendMode | null {
     const privateLayer = psdLayer as any; // bypass type checking
     const blendMode = privateLayer.layerFrame?.layerProperties?.blendMode;
-    return webtoonToCesdkBlendMode[blendMode] || null;
+    const convertedBlendMode = webtoonToCesdkBlendMode[blendMode] ?? null;
+    if (convertedBlendMode === null) {
+      this.logger.log(
+        `Blend mode '${blendMode}' is not supported in CE.SDK, using the default blend mode`,
+        "warning"
+      );
+    }
+    return convertedBlendMode;
   }
-
-  // end of class
 }
