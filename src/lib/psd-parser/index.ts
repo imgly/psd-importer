@@ -1222,7 +1222,8 @@ export class PSDParser {
   }
 
   private getLineHeight(textProperties: TextProperties): number {
-    const DEFAULT_LINE_HEIGHT = 1.2;
+    const DEFAULT_LINE_HEIGHT_FACTOR = 1.2;
+
     const stylesheet =
       textProperties.EngineDict?.StyleRun?.RunArray[0]?.StyleSheet
         .StyleSheetData;
@@ -1230,15 +1231,30 @@ export class PSDParser {
       const firstParagraphRun =
         textProperties.EngineDict?.ParagraphRun?.RunArray[0];
       const autoLeading =
-        firstParagraphRun?.ParagraphSheet?.Properties?.AutoLeading ??
-        DEFAULT_LINE_HEIGHT;
-      return autoLeading;
+        firstParagraphRun?.ParagraphSheet?.Properties?.AutoLeading;
+      if (autoLeading !== undefined) return autoLeading;
+
+      this.logger.log(
+        `Could not extract auto leading from text block. Using default line height of ${DEFAULT_LINE_HEIGHT_FACTOR}`,
+        "warning"
+      );
+      return DEFAULT_LINE_HEIGHT_FACTOR;
     }
-    let lineHeight = stylesheet?.Leading / stylesheet.FontSize;
+    let lineHeight = DEFAULT_LINE_HEIGHT_FACTOR;
+    if (
+      stylesheet?.Leading === undefined ||
+      stylesheet?.FontSize === undefined
+    ) {
+      this.logger.log(
+        `Could not extract line height from text block. Using default line height of ${DEFAULT_LINE_HEIGHT_FACTOR}`,
+        "warning"
+      );
+      return DEFAULT_LINE_HEIGHT_FACTOR;
+    }
+    lineHeight = stylesheet.Leading / stylesheet.FontSize;
     // If we have a line height that is too small to make sense, it indicates that the line height is set incorrectly in the PSD.
     // We thus set it to a default value line height value
     if (lineHeight < 0.6) {
-      lineHeight = 1.2;
       const textContent = this.engine.block.getString(
         this.engine.block.create("//ly.img.ubq/text"),
         "text/text"
@@ -1252,6 +1268,7 @@ export class PSDParser {
         `Line height of block with text "${shortTextContent}" is too small. Setting to default value.`,
         "warning"
       );
+      return DEFAULT_LINE_HEIGHT_FACTOR;
     }
     return lineHeight;
   }
