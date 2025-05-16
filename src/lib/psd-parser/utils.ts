@@ -1,5 +1,4 @@
-import CreativeEngine, { BlendMode, DesignUnit } from "@cesdk/engine";
-import Psd from "@webtoon/psd";
+import CreativeEngine, { BlendMode } from "@cesdk/engine";
 
 export const webtoonToCesdkBlendMode: { [key: string]: BlendMode } = {
   // unsupported types are commented out
@@ -7,13 +6,13 @@ export const webtoonToCesdkBlendMode: { [key: string]: BlendMode } = {
   norm: "Normal",
   //   diss: "Dissolve",
   dark: "Darken",
-  mul: "Multiply",
+  ["mul "]: "Multiply",
   idiv: "ColorBurn",
   //   lbrn: "LinearBurn",
   //   dkCl: "DarkerColor",
   lite: "Lighten",
   scrn: "Screen",
-  div: "ColorDodge",
+  ["div "]: "ColorDodge",
   //   lddg: "LinearDodge",
   //   lgCl: "LighterColor",
   over: "Overlay",
@@ -27,11 +26,11 @@ export const webtoonToCesdkBlendMode: { [key: string]: BlendMode } = {
   smud: "Exclusion",
   //   fsub: "Subtract",
   //   fdiv: "Divide",
-  hue: "Hue",
-  sat: "Saturation",
+  ["hue "]: "Hue",
+  ["sat "]: "Saturation",
   colr: "Color",
-  lum: "Luminosity",
-};
+  ["lum "]: "Luminosity",
+} as const;
 
 export async function waitUntilBlockIsReady(
   engine: CreativeEngine,

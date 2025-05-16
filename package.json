@@ -1,6 +1,6 @@
 {
   "name": "@imgly/psd-importer",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "main": "dist/index.cjs",
@@ -22,8 +22,8 @@
   },
   "homepage": "https://img.ly/showcases/cesdk/photoshop-template-import/web",
   "devDependencies": {
-    "@cesdk/engine": "^1.30.0",
-    "@cesdk/node": "^1.30.0",
+    "@cesdk/engine": "^1.38.0",
+    "@cesdk/node": "^1.38.0",
     "@types/chai": "^4.3.14",
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.6",

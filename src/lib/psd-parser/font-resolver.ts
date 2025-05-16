@@ -30,8 +30,8 @@ interface FontResolverResult {
   font: Font;
 }
 
-function buildUnpkgAssetPath(assetPath: string) {
-  return `https://unpkg.com/@imgly/psd-importer@${version}/dist/${assetPath}`;
+function buildAssetPath(assetPath: string) {
+  return `https://staticimgly.com/imgly/psd-importer/${version}/dist/${assetPath}`;
 }
 
 export type ContentJSON = {
@@ -41,8 +41,12 @@ export type ContentJSON = {
 };
 
 async function fetchGoogleFonts(customUrl?: string): Promise<ContentJSON> {
-  const url = customUrl ?? buildUnpkgAssetPath("google-fonts/content.json");
-  return fetch(url).then((res) => res.json());
+  const url = customUrl ?? buildAssetPath("google-fonts/content.json");
+  return fetch(url)
+    .then((res) => res.json())
+    .catch((e) => {
+      throw new Error(`Failed to fetch google fonts from: ${url} due to ${e}`);
+    });
 }
 
 let assetsPromise: Promise<ContentJSON>;
