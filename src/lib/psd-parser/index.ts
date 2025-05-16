@@ -1420,41 +1420,33 @@ export class PSDParser {
     offsetX = 0,
     offsetY = 0
   ) {
-    let pathFillRule = false;
-    let initialFillRule = false;
+    let svgPaths: string[] = [];
+    let currentPath = "";
     let isFirstPoint = true;
-    let previousPoint = null;
-    let firstPoint = null;
+    let previousPoint: PathRecord | null = null;
+    let firstPoint: PathRecord | null = null;
     let isClosed = true;
+    // TODO: handle fill rule
+    let pathFillRule = false;
 
-    let svgPath = "";
     for (const record of pathRecords) {
       // apply offsets and normalize values:
       const normalize = (value: number) => {
         // a 255 indicates a negative value
         // get bitwise representation of the number
-        if (value < 200) {
-          return value;
-        }
-        return value - 256;
+        return value < 128 ? value : value - 256;
       };
-      if ("anchor" in record && record.anchor !== null) {
-        record.anchor.horiz = normalize(record.anchor.horiz);
-        record.anchor.vert = normalize(record.anchor.vert);
-        record.anchor.horiz += offsetX;
-        record.anchor.vert += offsetY;
+      if ("anchor" in record && record.anchor) {
+        record.anchor.horiz = normalize(record.anchor.horiz) + offsetX;
+        record.anchor.vert = normalize(record.anchor.vert) + offsetY;
       }
-      if ("leaving" in record && record.leaving !== null) {
-        record.leaving.horiz = normalize(record.leaving.horiz);
-        record.leaving.vert = normalize(record.leaving.vert);
-        record.leaving.horiz += offsetX;
-        record.leaving.vert += offsetY;
+      if ("leaving" in record && record.leaving) {
+        record.leaving.horiz = normalize(record.leaving.horiz) + offsetX;
+        record.leaving.vert = normalize(record.leaving.vert) + offsetY;
       }
-      if ("preceding" in record && record.preceding !== null) {
-        record.preceding.horiz = normalize(record.preceding.horiz);
-        record.preceding.vert = normalize(record.preceding.vert);
-        record.preceding.horiz += offsetX;
-        record.preceding.vert += offsetY;
+      if ("preceding" in record && record.preceding) {
+        record.preceding.horiz = normalize(record.preceding.horiz) + offsetX;
+        record.preceding.vert = normalize(record.preceding.vert) + offsetY;
       }
 
       switch (record.type) {
@@ -1473,57 +1465,62 @@ export class PSDParser {
           // check if the record is actually the first node
           if (isFirstPoint) {
             firstPoint = record;
+            currentPath += this.getSvgMoveTo(record, width, height);
             isFirstPoint = false;
           } else if (previousPoint) {
-            const curve = this.getSvgCurve(
+            currentPath += this.getSvgCurve(
               previousPoint,
               record,
               width,
               height
             );
-            svgPath += curve;
           }
           previousPoint = record;
           break;
+
         case PathRecordType.ClosedSubpathLength:
         case PathRecordType.OpenSubpathLength:
-          // these cases might control subpath behaviors rather than draw
-          // usually not directly translatable to SVG.
+          if (currentPath) {
+            if (isClosed && firstPoint && previousPoint) {
+              currentPath +=
+                this.getSvgCurve(previousPoint, firstPoint, width, height) +
+                "Z";
+            }
+            svgPaths.push(currentPath);
+            currentPath = "";
+            isFirstPoint = true;
+            previousPoint = null;
+            firstPoint = null;
+          }
           break;
+
         case PathRecordType.PathFillRule:
           // handle fill rule if necessary, SVG has 'fill-rule' attribute.
           pathFillRule = true;
+          // if (record.fillRule) {
+          //   const fillRule =
+          //     record.fillRule === "evenodd" ? "evenodd" : "nonzero";
+          //   svgPaths.push(
+          //     `<path d="${currentPath}" fill-rule="${fillRule}" />`
+          //   );
+          //   currentPath = "";
+          // }
           break;
+
         case PathRecordType.Clipboard:
-          // not directly translatable to SVG path.
-          break;
         case PathRecordType.InitialFillRule:
-          // manage fill rule if applicable.
-          initialFillRule = record.fill;
           break;
       }
     }
-
-    // setting the first point based on if the path is closed
-    if (isClosed) {
-      const firstCurve =
-        firstPoint && previousPoint
-          ? this.getSvgCurve(previousPoint, firstPoint, width, height)
-          : "";
-      svgPath = svgPath + firstCurve + "Z";
-    } else {
-      const firstCurve = firstPoint
-        ? this.getSvgCurve(firstPoint, firstPoint, width, height)
-        : "";
-      svgPath = firstCurve + svgPath;
+    if (currentPath) {
+      if (isClosed && firstPoint && previousPoint) {
+        currentPath +=
+          this.getSvgCurve(previousPoint, firstPoint, width, height) + "Z";
+      }
+      svgPaths.push(currentPath);
     }
 
-    // moving to the first point
-    const moveTo = firstPoint
-      ? this.getSvgMoveTo(firstPoint, width, height)
-      : "";
-    svgPath = moveTo + svgPath;
-    return svgPath;
+    return svgPaths.join(" ");
   }
 
   private rotateBlock(block: number, psdLayer: Layer): void {
