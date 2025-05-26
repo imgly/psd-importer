@@ -459,20 +459,15 @@ export class PSDParser {
     // However, this is the best approximation we can do.
     let opacity = blendModeFillOpacity * layerOpacity;
 
-    // If we have an image fill, then we should only take in parents opacity into account
-    // The image fill will be already reflect the layer opacity
-    // Blend mode fill opacity should be taken into account
-    const fill = this.engine.block.getFill(block);
-    if (this.engine.block.getType(fill) === "//ly.img.ubq/fill/image") {
-      opacity = blendModeFillOpacity;
-    }
-
+    // Multiply by all ancestor opacities
     let parent: NodeParent | undefined = psdLayer.parent;
     while (parent) {
       // combine and normalize
-      opacity = opacity * (parent.opacity / 255);
+      opacity = (opacity * (parent.opacity ?? 255)) / 255;
       parent = parent.parent;
     }
+    // Clamp opacity to [0, 1]
+    opacity = Math.max(0, Math.min(1, opacity));
     this.engine.block.setOpacity(block, opacity);
     return opacity;
   }
