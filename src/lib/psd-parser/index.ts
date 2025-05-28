@@ -458,10 +458,32 @@ export class PSDParser {
     // This is not fully correct, since blend mode fill is applied differently than the layer opacity in PhotoShop.
     // However, this is the best approximation we can do.
     let opacity = blendModeFillOpacity * layerOpacity;
-
+    // For image fills, only parent opacity and blend mode fill opacity are applied.
+    // Layer opacity is already included in the image.
+    const fill = this.engine.block.getFill(block);
+    if (
+      this.engine.block.getType(fill) === "//ly.img.ubq/fill/image" &&
+      !(
+        psdLayer.additionalProperties.vmsk ||
+        psdLayer.additionalProperties.vscg ||
+        psdLayer.additionalProperties.vsms ||
+        psdLayer.additionalProperties.vstk
+      )
+    ) {
+      opacity = blendModeFillOpacity;
+    }
     // Multiply by all ancestor opacities
     let parent: NodeParent | undefined = psdLayer.parent;
     while (parent) {
+      // If parent is a group, check its blend mode
+      const parentBlendMode = (parent as any)?.layerFrame?.layerProperties
+        ?.blendMode;
+      // "passThrough" means don't multiply group opacity (Photoshop semantics)
+      if (parent.type === "Group" && parentBlendMode === "passThrough") {
+        // skip multiplying opacity for passThrough groups
+        parent = parent.parent;
+        continue;
+      }
       // combine and normalize
       opacity = (opacity * (parent.opacity ?? 255)) / 255;
       parent = parent.parent;
@@ -1272,6 +1294,7 @@ export class PSDParser {
     pageBlock: number,
     psdLayer: Layer
   ): Promise<number> {
+    console.log("Creating image block for layer:", psdLayer.name);
     // extract the pixel data of a layer, with only the layer's own effects applied
     const compositeBuffer = await psdLayer.composite(true, false);
 
