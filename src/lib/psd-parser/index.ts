@@ -1629,14 +1629,6 @@ export class PSDParser {
         case PathRecordType.PathFillRule:
           // handle fill rule if necessary, SVG has 'fill-rule' attribute.
           pathFillRule = true;
-          // if (record.fillRule) {
-          //   const fillRule =
-          //     record.fillRule === "evenodd" ? "evenodd" : "nonzero";
-          //   svgPaths.push(
-          //     `<path d="${currentPath}" fill-rule="${fillRule}" />`
-          //   );
-          //   currentPath = "";
-          // }
           break;
 
         case PathRecordType.Clipboard:
