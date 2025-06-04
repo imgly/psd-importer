@@ -40,7 +40,7 @@
   },
   "peerDependencies": {
     "@cesdk/engine": "^1.38.0 ",
-    "@cesdk/node": "1.38.0",
+    "@cesdk/node": "^1.38.0",
     "typescript": "^5.0.0"
   },
   "peerDependenciesMeta": {
