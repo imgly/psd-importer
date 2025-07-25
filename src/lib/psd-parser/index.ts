@@ -15,7 +15,7 @@ import Psd, {
   NodeChild,
   NodeParent,
   PathRecordType,
-} from "@webtoon/psd";
+} from "@imgly/psd";
 import {
   PathRecord,
   TypeToolObjectSettingAliBlock,
