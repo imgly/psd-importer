@@ -33,7 +33,7 @@ npm run publish
 ### Core Components
 
 **PSDParser Class** (`src/lib/psd-parser/index.ts`): Main orchestrator that:
-- Parses PSD files using `@webtoon/psd` library
+- Parses PSD files using `@imgly/psd` library (a fork of `@webtoon/psd` with latest commits and PSB support)
 - Converts PSD layers to CE.SDK blocks (text, graphic, image)
 - Handles coordinate system transformations
 - Manages font resolution via Google Fonts

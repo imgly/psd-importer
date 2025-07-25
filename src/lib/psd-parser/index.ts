@@ -19,7 +19,7 @@ import Psd, {
 import {
   PathRecord,
   TypeToolObjectSettingAliBlock,
-} from "@webtoon/psd/dist/interfaces";
+} from "@imgly/psd/dist/interfaces";
 // @ts-ignore
 import opentype from "opentype.js";
 import { parseColor } from "./color";
