@@ -2,7 +2,7 @@ import * as fs from "fs";
 import pixelmatch from "pixelmatch";
 import * as path from "path";
 import * as dotenv from "dotenv";
-import Psd from "@webtoon/psd";
+import Psd from "@imgly/psd";
 import { PNG } from "pngjs";
 import CreativeEngine from "@cesdk/node";
 import { PSDParser } from "../src/lib/psd-parser";
@@ -68,18 +68,21 @@ const processPsdFiles = async (heatmap: boolean = true) => {
       if (fileNameFilter && !file.includes(fileNameFilter)) {
         continue;
       }
-      // check if the file has a .psd extension
-      if (path.extname(file).toLowerCase() === ".psd") {
+      // check if the file has a .psd or .psb extension
+      if (
+        path.extname(file).toLowerCase() === ".psd" ||
+        path.extname(file).toLowerCase() === ".psb"
+      ) {
         console.log("--------------------");
         console.log("processing file:", file);
         try {
           const filePath = path.join(inputFolderPath, file);
-          const baseName = path.basename(file, ".psd");
+          const baseName = path.basename(file, path.extname(file));
 
-          // copy original psd file to the output folder
+          // copy original psd/psb file to the output folder
           fs.copyFileSync(
             filePath,
-            path.join(outputFolderPath, `${baseName}.psd`)
+            path.join(outputFolderPath, `${baseName}${path.extname(file)}`)
           );
 
           // read the PSD file and save it as PNG for reference

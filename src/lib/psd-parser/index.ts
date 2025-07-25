@@ -15,11 +15,11 @@ import Psd, {
   NodeChild,
   NodeParent,
   PathRecordType,
-} from "@webtoon/psd";
+} from "@imgly/psd";
 import {
   PathRecord,
   TypeToolObjectSettingAliBlock,
-} from "@webtoon/psd/dist/interfaces";
+} from "@imgly/psd/dist/interfaces";
 // @ts-ignore
 import opentype from "opentype.js";
 import { parseColor } from "./color";
