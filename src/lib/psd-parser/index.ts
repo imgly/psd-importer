@@ -668,6 +668,7 @@ export class PSDParser {
     // check for style(s) of text content section(s)
     const styleRunLengthArray =
       textProperties.EngineDict?.StyleRun?.RunLengthArray;
+
     if (styleRunLengthArray) {
       // first character of the text content
       let textSectionStart = 0;
@@ -690,6 +691,69 @@ export class PSDParser {
           return { from, to, styleSheetData };
         })
         .filter((b) => b !== false) as StyleRun[];
+
+      // Apply fonts to ranges in parallel
+      await Promise.all(
+        styleRuns.map(async ({ from, to, styleSheetData }) => {
+          const fontIndex = styleSheetData?.Font ?? 0;
+          const rangeFont = this.getTextFontSet(textProperties, fontIndex);
+
+          // Only apply if different from the default font already applied to whole block
+          if (
+            rangeFont.family !== font.family ||
+            rangeFont.weight !== font.weight ||
+            rangeFont.style !== font.style
+          ) {
+            if (
+              !(
+                rangeFont.family.toLowerCase() ===
+                "AdobeInvisFont".toLowerCase()
+              )
+            ) {
+              try {
+                const typefaceResponse = await this.fontResolver(
+                  rangeFont,
+                  this.engine
+                );
+                if (typefaceResponse) {
+                  this.engine.block.setTypeface(
+                    textBlock,
+                    typefaceResponse.typeface,
+                    from,
+                    to
+                  );
+
+                  // Also explicitly set font style and weight to override any inherited styling
+                  if (rangeFont.style === "normal") {
+                    // Reset to normal if the range font should be normal but default is italic
+                    if (
+                      this.engine.block.canToggleItalicFont(textBlock, from, to)
+                    ) {
+                      const currentlyItalic = this.engine.block
+                        .getTextFontStyles(textBlock, from, to)
+                        .includes("italic");
+                      if (currentlyItalic) {
+                        this.engine.block.toggleItalicFont(textBlock, from, to);
+                      }
+                    }
+                  }
+                } else {
+                  this.logger.log(
+                    `Font resolution returned null for '${rangeFont.family}' (${rangeFont.weight}, ${rangeFont.style}) - range ${from}-${to}`,
+                    "warning"
+                  );
+                }
+              } catch (error) {
+                this.logger.log(
+                  `Could not apply font '${rangeFont.family}' to range ${from}-${to}: ${error}`,
+                  "warning"
+                );
+              }
+            }
+          }
+        })
+      );
+
       styleRuns.forEach(({ from, to, styleSheetData }) => {
         // set text case
         const fontCaps = styleSheetData.FontCaps;
@@ -1030,7 +1094,10 @@ export class PSDParser {
     this.engine.block.setHeight(textBlock, originalHeight);
   }
 
-  private getTextFontSet(textProperties: TextProperties): TypefaceParams {
+  private getTextFontSet(
+    textProperties: TextProperties,
+    fontIndex: number = 0
+  ): TypefaceParams {
     let fontSet = textProperties.ResourceDict?.FontSet;
     if (!fontSet) {
       fontSet = textProperties.DocumentResources?.FontSet;
@@ -1043,9 +1110,9 @@ export class PSDParser {
       }
     }
 
-    // using the first font in the font set
-    // as cesdk only supports single font for a text layer
-    let namePart = fontSet[0].Name;
+    // using the specified font index, fallback to first font
+    const selectedFontIndex = fontIndex < fontSet.length ? fontIndex : 0;
+    let namePart = fontSet[selectedFontIndex].Name;
     let stylePart: FontStyle = "normal";
     let weightPart: FontWeight = "normal";
     // based on font-resolvers.ts/fontVariantMap
@@ -1082,7 +1149,7 @@ export class PSDParser {
     };
 
     // normalize font name to lowercase
-    const fontName = fontSet[0].Name.toLowerCase();
+    const fontName = namePart.toLowerCase();
 
     // regular italic case
     if (fontName.endsWith("-italic")) {
