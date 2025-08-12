@@ -141,6 +141,15 @@ export class PSDParser {
       if (psdNode.isHidden && !this.flags.enableCreateHiddenLayers) return;
 
       await this.checkUnsupportedLayerFeatures(psdNode);
+      // Skip layers with zero width or height to prevent errors
+      if (psdNode.width <= 0 || psdNode.height <= 0) {
+        this.logger.log(
+          `Skipping layer "${psdNode.name}" with invalid dimensions: ${psdNode.width}x${psdNode.height}`,
+          "warning"
+        );
+        return; // Skip processing this layer entirely
+      }
+
       if (psdNode.text) {
         layerBlockId = await this.createTextBlock(page, psdNode);
       } else {
