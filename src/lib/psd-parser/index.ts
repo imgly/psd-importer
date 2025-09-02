@@ -22,7 +22,7 @@ import {
 } from "@imgly/psd/dist/interfaces";
 // @ts-ignore
 import opentype from "opentype.js";
-import { parseColor } from "./color";
+import { parseColor, parseGradientFromVscg, createGradientFill } from "./color";
 import type { TypefaceParams, TypefaceResolver } from "./font-resolver";
 import defaultFontResolver from "./font-resolver";
 import { EncodeBufferToPNG } from "./image-encoder";
@@ -41,6 +41,7 @@ import {
   revertReplaceTextVariables,
   waitUntilBlockIsReady,
   webtoonToCesdkBlendMode,
+  angleToGradientControlPoints,
 } from "./utils";
 
 /**
@@ -1532,6 +1533,9 @@ export class PSDParser {
       const clr_ = vscg.data.descriptor.items.get(
         "Clr "
       ) as VectorObjectTypeItem;
+      if (!clr_) {
+        this.logger.log(`Layer "${psdLayer.name}" has no 'Clr ' in vscg, checking for gradient`, "info");
+      }
       const color = parseColor(clr_) ?? { r: 0, g: 0, b: 0, a: 1 };
       if (psdLayer.additionalProperties.vsms) {
         // handling vector mask setting
@@ -1539,7 +1543,15 @@ export class PSDParser {
         pathRecords = vsms.pathRecords;
       }
 
-      // set fill
+      // Check for gradient first, then fall back to solid color
+      const gradientInVscg = vscg.data.descriptor.items.get("Grad");
+      if (gradientInVscg) {
+        this.logger.log(`Found gradient in layer "${psdLayer.name}", will apply after shape creation`, "info");
+        // Store gradient data for later use after shape is created
+        (psdLayer as any)._gradientData = { vscg, parsedGradient: null };
+      }
+      
+      // Set temporary fill (will be replaced with gradient if applicable)
       const fill = this.engine.block.createFill("color");
       this.engine.block.setColor(fill, "fill/color/value", color);
       this.engine.block.setFill(graphicBlock, fill);
@@ -1569,11 +1581,37 @@ export class PSDParser {
     this.engine.block.setFloat(shape, "vector_path/width", psdLayer.width);
     this.engine.block.setFloat(shape, "vector_path/height", psdLayer.height);
 
-    const gradient = psdLayer.additionalProperties.GdFl;
-    if (gradient) {
-      // Currently unsupported
-      this.logger.log("Gradient fills are currently not supported", "warning");
+    // Handle gradient fills if gradient data was stored
+    const gradientData = (psdLayer as any)._gradientData;
+    if (gradientData) {
+      this.logger.log(`Processing gradient fill for layer "${psdLayer.name}"`, "info");
+      // The gradient data is in the VSCG descriptor itself, not in a sub-item
+      const vscgDescriptor = {
+        type: "Objc" as const,
+        descriptor: gradientData.vscg.data.descriptor
+      };
+      this.logger.log(`VSCG descriptor items: ${Array.from(gradientData.vscg.data.descriptor.items.keys()).join(", ")}`, "info");
+      const parsedGradient = parseGradientFromVscg(vscgDescriptor, this.logger);
+      
+      if (parsedGradient) {
+        try {
+          const gradientFill = createGradientFill(this.engine, parsedGradient, graphicBlock, this.logger);
+          this.engine.block.setFill(graphicBlock, gradientFill);
+          this.logger.log(`Applied ${parsedGradient.type} gradient with ${parsedGradient.stops.length} color stops`, "info");
+        } catch (error) {
+          this.logger.log(`Failed to create gradient fill: ${error}`, "error");
+          // Gradient creation failed, keep the existing solid color fill
+        }
+      } else {
+        this.logger.log(`Layer "${psdLayer.name}" has gradient data but could not parse it`, "warning");
+        // Keep the existing solid color fill
+      }
+      
+      // Clean up temporary data
+      delete (psdLayer as any)._gradientData;
     }
+
+
     // check for vector stroke data
     if (psdLayer.additionalProperties.vstk) {
       const vstk = psdLayer.additionalProperties.vstk;

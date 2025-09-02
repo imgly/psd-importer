@@ -1,5 +1,12 @@
 import CreativeEngine, { BlendMode } from "@cesdk/engine";
 
+interface Vector2 {
+  x: number;
+  y: number;
+}
+
+const sqrtOfTwo = Math.sqrt(2);
+
 export const webtoonToCesdkBlendMode: { [key: string]: BlendMode } = {
   // unsupported types are commented out
   pass: "PassThrough",
@@ -103,3 +110,44 @@ export function revertReplaceTextVariables(
     );
   }
 }
+
+function scaleAndTranslateToUnitRect(vector: Vector2): Vector2 {
+  return {
+    x: Math.max(0, Math.min(1, vector.x * 0.5 + 0.5)),
+    y: Math.max(0, Math.min(1, vector.y * 0.5 + 0.5))
+  };
+}
+
+export const angleToGradientControlPoints = (
+  angleInDegrees: number,
+  aspectRatio: number
+) => {
+  // PSD angles: 0° = left to right, 90° = top to bottom
+  // For nearly horizontal angles (like -2°), use simpler calculation
+  if (Math.abs(angleInDegrees) < 10) {
+    // For near-horizontal gradients, create truly horizontal line with slight angle
+    // Flip the Y direction to match PSD coordinate system
+    const angleRad = (angleInDegrees / 180) * Math.PI;
+    const yOffset = Math.sin(angleRad) * 0.5; // Limit vertical offset
+    
+    return {
+      start: { x: 0, y: 0.5 - yOffset }, // Only flip Y axis for PSD mirroring  
+      end: { x: 1, y: 0.5 + yOffset }   // Only flip Y axis for PSD mirroring
+    };
+  }
+  
+  // Original calculation for larger angles
+  const rad = (angleInDegrees / 180) * Math.PI;
+  const start: Vector2 = {
+    x: (Math.cos(rad + Math.PI) / aspectRatio) * sqrtOfTwo,
+    y: Math.sin(rad + Math.PI) * sqrtOfTwo,
+  };
+  const end: Vector2 = {
+    x: (Math.cos(rad) / aspectRatio) * sqrtOfTwo,
+    y: Math.sin(rad) * sqrtOfTwo,
+  };
+  return {
+    start: scaleAndTranslateToUnitRect(start),
+    end: scaleAndTranslateToUnitRect(end),
+  };
+};
