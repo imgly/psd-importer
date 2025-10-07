@@ -128,7 +128,7 @@ export class PSDParser {
       return new PSDParser(engine, psdFile, encodeBufferToPNG, options);
     } catch (error) {
       throw new Error(
-        `Error occurred during parsing the PSD file: ${error}. This file can not be imported.`
+        `Error occurred during parsing the PSD file: ${error}. This file can not be imported. Try resaving it in Adobe Photoshop with "Maximize Compatibility" enabled (Preferences > File Handling > Maximize PSD and PSB File Compatibility).`
       );
     }
   }
