@@ -219,12 +219,29 @@ export class PSDParser {
       );
     }
 
-    const userMask = await psdNode.userMask();
-    if (userMask) {
-      this.logger.log(
-        `Layer '${psdNode.name}' has a layer mask, which is not supported.`,
-        "warning"
-      );
+    try {
+      const userMask = await psdNode.userMask();
+      if (userMask) {
+        this.logger.log(
+          `Layer '${psdNode.name}' has a layer mask, which is not supported.`,
+          "warning"
+        );
+      }
+    } catch (error) {
+      // Catch capacity overflow errors from large masks
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('capacity overflow') || errorMessage.includes('unreachable')) {
+        this.logger.log(
+          `Layer '${psdNode.name}' has an extremely large layer mask that cannot be processed due to memory constraints. Skipping mask processing.`,
+          "warning"
+        );
+      } else {
+        // Log other errors as warnings instead of throwing
+        this.logger.log(
+          `Layer '${psdNode.name}' encountered an error while processing layer mask: ${errorMessage}`,
+          "warning"
+        );
+      }
     }
     const hasMask =
       // @ts-ignore
