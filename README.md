@@ -171,6 +171,14 @@ List of blend modes not currently supported by the engine:
 - Subtract
 - Divide
 
+## Recent Updates
+
+### Version 0.0.12
+
+- **Fixed**: Handle capacity overflow errors when processing large layer masks in files >900MB
+- **Fixed**: Prevent WASM decoder crashes by catching and logging memory constraint errors
+- **Improved**: Allow large PSD files to import successfully by gracefully skipping problematic masks
+
 ## License
 
 The software is free for use under the AGPL License.
