@@ -20,9 +20,8 @@ import {
   PathRecord,
   TypeToolObjectSettingAliBlock,
 } from "@imgly/psd/dist/interfaces";
-// @ts-ignore
-import opentype from "opentype.js";
 import { parseColor } from "./color";
+import { FontRenderingAdapter } from "./font-metrics";
 import type { TypefaceParams, TypefaceResolver } from "./font-resolver";
 import defaultFontResolver from "./font-resolver";
 import { EncodeBufferToPNG } from "./image-encoder";
@@ -48,16 +47,6 @@ import {
  * This is used to convert the PSD file's pixel values to CESDK's design unit
  */
 const DEFAULT_PIXEL_SCALE_FACTOR = 72;
-
-const fontInfoMap: Record<
-  string,
-  {
-    descender: number;
-    ascender: number;
-    unitsPerEm: number;
-    factor: number;
-  }
-> = {};
 
 interface Flags {
   applyClipMasks: boolean;
@@ -92,6 +81,7 @@ export class PSDParser {
   private psd: Psd;
   private logger = new Logger();
   private fontResolver: TypefaceResolver;
+  private fontRenderingAdapter = new FontRenderingAdapter();
   private encodeBufferToPNG: EncodeBufferToPNG;
   private flags: Flags;
   private groups: Map<number, number[]>;
@@ -557,34 +547,18 @@ export class PSDParser {
         // if loading the font errors out
         try {
           if (this.flags.enableTextTypefaceReachableCheck) {
-            // use fetch to see if the font is loadable
-            if (!fontInfoMap[fontURI]) {
-              const res = await fetch(fontURI);
-              if (!res.ok) {
-                throw new Error(`error loading font at ${fontURI}`);
-              }
-              const buffer = await res.arrayBuffer();
-              const fontInfo = await opentype.parse(buffer);
-              const factor =
-                (fontInfo.ascender - fontInfo.descender) / fontInfo.unitsPerEm;
-              const { ascender, descender, unitsPerEm } = fontInfo;
-              fontInfoMap[fontURI] = {
-                descender,
-                ascender,
-                unitsPerEm,
-                factor,
-              };
+            const { error } = await this.fontRenderingAdapter.load(fontURI);
+            if (error) {
+              this.logger.log(
+                `Could not parse font '${fontURI}' for text '${textContent}': [${error.type}] ${error.message}`,
+                "error"
+              );
             }
           }
-          this.engine.block.setFont(
-            textBlock,
-            fontURI,
-            typefaceResponse.typeface
-          );
+          this.engine.block.setFont(textBlock, fontURI, typefaceResponse.typeface);
         } catch (error) {
           this.logger.log(
-            `Could not load font at '${fontURI}' ` +
-              `for text: '${textContent}' due to: ${error}`,
+            `Could not load font at '${fontURI}' for text: '${textContent}' due to: ${error}`,
             "error"
           );
         }
@@ -928,13 +902,12 @@ export class PSDParser {
     // set line height
     let lineHeight = this.getLineHeight(textProperties);
     if (lineHeight) {
-      const fontUri = this.engine.block.getString(
-        textBlock,
-        "text/fontFileUri"
-      );
-      // Correct for differences in line height calculation between Photoshop and CE.SDK
-      if (fontInfoMap[fontUri]) {
-        lineHeight = lineHeight / fontInfoMap[fontUri].factor;
+      const fontUri = this.engine.block.getString(textBlock, "text/fontFileUri");
+      const metrics = this.fontRenderingAdapter.get(fontUri);
+      if (metrics) {
+        // Adjust line height for differences between Photoshop and CE.SDK
+        const { ascender, descender, unitsPerEm } = metrics;
+        lineHeight = lineHeight / ((ascender - descender) / unitsPerEm);
       }
       this.engine.block.setFloat(textBlock, "text/lineHeight", lineHeight);
     }
@@ -986,14 +959,13 @@ export class PSDParser {
   private textVerticalAlignmentFix(textBlock: number) {
     const fontSize = this.engine.block.getFloat(textBlock, "text/fontSize");
     const fontUri = this.engine.block.getString(textBlock, "text/fontFileUri");
-    const fontInfo = fontInfoMap[fontUri];
-    if (fontInfo) {
-      // Honestly, I don't know why this works, but it does
-      const offset =
-        (((-fontInfo.descender + fontInfo.ascender - fontInfo.unitsPerEm) /
-          fontInfo.unitsPerEm) *
-          fontSize) /
-        2;
+    const metrics = this.fontRenderingAdapter.get(fontUri);
+
+    if (metrics) {
+      // Calculate vertical alignment offset for PSD text
+      // Formula empirically derived to match Photoshop's baseline positioning
+      const { descender, ascender, unitsPerEm } = metrics;
+      const offset = (((-descender + ascender - unitsPerEm) / unitsPerEm) * fontSize) / 2;
       this.moveTextInTextDirection(textBlock, 0, -offset);
     }
   }
