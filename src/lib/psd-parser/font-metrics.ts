@@ -35,7 +35,7 @@
  * For PSD-specific text adjustments, see `psd-text-adjustments.ts`.
  */
 
-// @ts-ignore
+// @ts-expect-error - opentype.js lacks TypeScript declarations
 import opentype from "opentype.js";
 
 export interface FontMetrics {
@@ -82,6 +82,9 @@ function getFontFormat(buffer: ArrayBuffer): FontFormat {
 /**
  * Decompresses a font buffer if needed (e.g., WOFF2 → TTF).
  * Uses dynamic import to lazily load woff2-encoder only when needed.
+ *
+ * Note: WOFF (v1) is not decompressed here because opentype.js handles it natively.
+ * Only WOFF2 requires explicit decompression before parsing.
  */
 async function decompressFontBuffer(
   buffer: ArrayBuffer,
@@ -92,33 +95,40 @@ async function decompressFontBuffer(
     const result = await decompress(buffer);
     return result.buffer as ArrayBuffer;
   }
+  // TTF, OTF, and WOFF are handled natively by opentype.js
   return buffer;
 }
 
 /**
  * Font metrics storage with built-in loading from URLs.
  * Handles fetching, format detection, parsing, and caching.
+ * Also caches errors to avoid repeated fetch attempts for broken URLs.
  */
 export class FontRenderingAdapter {
-  private cache: Map<string, FontMetrics> = new Map();
+  private cache: Map<string, FontLoadResult> = new Map();
 
   /** Check if metrics are already loaded for a font */
   has(fontURI: string): boolean {
     return this.cache.has(fontURI);
   }
 
-  /** Get cached metrics (returns null if not loaded) */
+  /** Get cached metrics (returns null if not loaded or if load failed) */
   get(fontURI: string): FontMetrics | null {
-    return this.cache.get(fontURI) ?? null;
+    return this.cache.get(fontURI)?.metrics ?? null;
+  }
+
+  /** Get cached error (returns undefined if not loaded or if load succeeded) */
+  getError(fontURI: string): FontParseError | undefined {
+    return this.cache.get(fontURI)?.error;
   }
 
   /**
    * Load font metrics from URL. Fetches, detects format, parses, and caches.
-   * Returns cached metrics if already loaded.
+   * Returns cached result (success or error) if already attempted.
    */
   async load(fontURI: string): Promise<FontLoadResult> {
     const cached = this.cache.get(fontURI);
-    if (cached) return { metrics: cached };
+    if (cached) return { metrics: cached.metrics, error: cached.error };
 
     // Fetch
     let buffer: ArrayBuffer;
@@ -127,31 +137,38 @@ export class FontRenderingAdapter {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       buffer = await res.arrayBuffer();
     } catch (e) {
-      return {
+      const result: FontLoadResult = {
         metrics: null,
         error: { type: "FETCH_FAILED", message: String(e) },
       };
+      this.cache.set(fontURI, result);
+      return result;
     }
 
     // Detect format
     const format = getFontFormat(buffer);
     if (format === "unknown") {
-      return {
+      const result: FontLoadResult = {
         metrics: null,
         error: { type: "UNSUPPORTED_FORMAT", message: "Unknown font format" },
       };
+      this.cache.set(fontURI, result);
+      return result;
     }
+
     // Decompress if needed (WOFF2 → TTF)
     try {
       buffer = await decompressFontBuffer(buffer, format);
     } catch (e) {
-      return {
+      const result: FontLoadResult = {
         metrics: null,
         error: {
           type: "WOFF2_DECOMPRESS_FAILED",
           message: String(e),
         },
       };
+      this.cache.set(fontURI, result);
+      return result;
     }
 
     // Parse
@@ -166,13 +183,16 @@ export class FontRenderingAdapter {
         throw new Error("Missing metrics");
       }
       const metrics: FontMetrics = { ascender, descender, unitsPerEm };
-      this.cache.set(fontURI, metrics);
-      return { metrics };
+      const result: FontLoadResult = { metrics };
+      this.cache.set(fontURI, result);
+      return result;
     } catch (e) {
-      return {
+      const result: FontLoadResult = {
         metrics: null,
         error: { type: "PARSE_FAILED", message: String(e) },
       };
+      this.cache.set(fontURI, result);
+      return result;
     }
   }
 
