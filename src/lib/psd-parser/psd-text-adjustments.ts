@@ -9,7 +9,7 @@ import type { FontMetrics } from "./font-metrics";
  *
  * @param psdLineHeight - The line height factor from PSD (e.g., 1.2 for 120%)
  * @param metrics - Font metrics containing ascender, descender, and unitsPerEm
- * @returns Adjusted line height for CE.SDK
+ * @returns Adjusted line height for CE.SDK, or the original value if metrics are invalid
  *
  * @example
  * ```typescript
@@ -23,7 +23,15 @@ export function adjustLineHeight(
   metrics: FontMetrics
 ): number {
   const { ascender, descender, unitsPerEm } = metrics;
-  return psdLineHeight / ((ascender - descender) / unitsPerEm);
+  // Guard against division by zero
+  if (unitsPerEm === 0) {
+    return psdLineHeight;
+  }
+  const factor = (ascender - descender) / unitsPerEm;
+  if (factor === 0) {
+    return psdLineHeight;
+  }
+  return psdLineHeight / factor;
 }
 
 /**
@@ -35,7 +43,7 @@ export function adjustLineHeight(
  *
  * @param fontSize - The font size in points
  * @param metrics - Font metrics containing ascender, descender, and unitsPerEm
- * @returns Vertical offset in points (negative values move text up)
+ * @returns Vertical offset in points (negative values move text up), or 0 if metrics are invalid
  *
  * @example
  * ```typescript
@@ -49,5 +57,9 @@ export function calculateVerticalAlignmentOffset(
   metrics: FontMetrics
 ): number {
   const { descender, ascender, unitsPerEm } = metrics;
+  // Guard against division by zero
+  if (unitsPerEm === 0) {
+    return 0;
+  }
   return (((-descender + ascender - unitsPerEm) / unitsPerEm) * fontSize) / 2;
 }
