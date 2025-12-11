@@ -64,7 +64,8 @@
     "test": "bun test src/lib/psd-parser/font-metrics.test.ts",
     "test:integration": "mocha",
     "publish": "npm run build && npm publish --access public",
-    "compare": "tsx scripts/comparison.ts"
+    "compare": "tsx scripts/comparison.ts",
+    "deploy:cdn": "op run --env-file=.env -- rclone sync ./dist r2:imgly-cdn/imgly/psd-importer/$npm_package_version/dist/"
   },
   "dependencies": {
     "@imgly/psd": "^0.4.0-imgly.1",
