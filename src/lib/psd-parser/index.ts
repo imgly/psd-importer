@@ -22,6 +22,7 @@ import {
 } from "@imgly/psd/dist/interfaces";
 import { parseColor } from "./color";
 import { FontRenderingAdapter } from "./font-metrics";
+import { adjustLineHeight, calculateVerticalAlignmentOffset } from "./psd-text-adjustments";
 import type { TypefaceParams, TypefaceResolver } from "./font-resolver";
 import defaultFontResolver from "./font-resolver";
 import { EncodeBufferToPNG } from "./image-encoder";
@@ -905,9 +906,7 @@ export class PSDParser {
       const fontUri = this.engine.block.getString(textBlock, "text/fontFileUri");
       const metrics = this.fontRenderingAdapter.get(fontUri);
       if (metrics) {
-        // Adjust line height for differences between Photoshop and CE.SDK
-        const { ascender, descender, unitsPerEm } = metrics;
-        lineHeight = lineHeight / ((ascender - descender) / unitsPerEm);
+        lineHeight = adjustLineHeight(lineHeight, metrics);
       }
       this.engine.block.setFloat(textBlock, "text/lineHeight", lineHeight);
     }
@@ -962,10 +961,7 @@ export class PSDParser {
     const metrics = this.fontRenderingAdapter.get(fontUri);
 
     if (metrics) {
-      // Calculate vertical alignment offset for PSD text
-      // Formula empirically derived to match Photoshop's baseline positioning
-      const { descender, ascender, unitsPerEm } = metrics;
-      const offset = (((-descender + ascender - unitsPerEm) / unitsPerEm) * fontSize) / 2;
+      const offset = calculateVerticalAlignmentOffset(fontSize, metrics);
       this.moveTextInTextDirection(textBlock, 0, -offset);
     }
   }
