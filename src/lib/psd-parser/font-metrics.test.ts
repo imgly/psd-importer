@@ -4,13 +4,16 @@ import {
   adjustLineHeight,
   calculateVerticalAlignmentOffset,
 } from "./psd-text-adjustments";
+import { join } from "path";
+import { pathToFileURL } from "url";
 
-// Test font URLs
+// Local test font paths (downloaded from Google Fonts)
+const FIXTURES_DIR = join(import.meta.dir, "fixtures", "fonts");
 const TEST_FONTS = {
-  // WOFF2 from the customer ticket
-  woff2: "https://fonts.gstatic.com/l/font?kit=q5uDsoS_Lf9xv7Su1Fp4ATRZs5RwX6vAwjD_YUY1VtRJL6DJ&skey=f367a5978ad3b244&v=v5",
-  // Standard TTF (Google Fonts Roboto)
-  ttf: "https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Me5Q.ttf",
+  // WOFF2 format
+  woff2: pathToFileURL(join(FIXTURES_DIR, "test-font.woff2")).href,
+  // Standard TTF (Roboto Regular)
+  ttf: pathToFileURL(join(FIXTURES_DIR, "Roboto-Regular.ttf")).href,
 };
 
 describe("FontRenderingAdapter", () => {
@@ -45,20 +48,20 @@ describe("FontRenderingAdapter", () => {
       expect(typeof result.metrics?.unitsPerEm).toBe("number");
     });
 
-    it("should return error for invalid URL", async () => {
-      const result = await adapter.load("https://example.com/nonexistent.ttf");
+    it("should return FETCH_FAILED error for invalid URL", async () => {
+      const result = await adapter.load("file:///nonexistent/path/font.ttf");
 
       expect(result.metrics).toBeNull();
       expect(result.error?.type).toBe("FETCH_FAILED");
     });
 
-    it("should return error for unknown format", async () => {
-      // Create a mock server response would be complex, so we test the error type exists
-      const result = await adapter.load("data:application/octet-stream;base64,AAAA");
+    it("should return UNSUPPORTED_FORMAT error for unknown format", async () => {
+      // Use a non-font file to test format detection
+      const invalidFontUrl = pathToFileURL(join(FIXTURES_DIR, "..", "invalid.txt")).href;
+      const result = await adapter.load(invalidFontUrl);
 
       expect(result.metrics).toBeNull();
-      // Could be FETCH_FAILED or UNSUPPORTED_FORMAT depending on how data URLs are handled
-      expect(result.error).toBeDefined();
+      expect(result.error?.type).toBe("UNSUPPORTED_FORMAT");
     });
   });
 
@@ -80,8 +83,8 @@ describe("FontRenderingAdapter", () => {
     });
 
     it("should return null for uncached fonts", () => {
-      expect(adapter.has("https://example.com/unknown.ttf")).toBe(false);
-      expect(adapter.get("https://example.com/unknown.ttf")).toBeNull();
+      expect(adapter.has("file:///unknown/font.ttf")).toBe(false);
+      expect(adapter.get("file:///unknown/font.ttf")).toBeNull();
     });
 
     it("should clear cache", async () => {
@@ -90,6 +93,16 @@ describe("FontRenderingAdapter", () => {
       adapter.clear();
 
       expect(adapter.has(url)).toBe(false);
+    });
+
+    it("should cache errors for failed loads", async () => {
+      const url = "file:///nonexistent/path/font.ttf";
+      const result1 = await adapter.load(url);
+      const result2 = await adapter.load(url);
+
+      expect(result1.error).toBeDefined();
+      expect(result2.error).toEqual(result1.error);
+      expect(adapter.getError(url)).toEqual(result1.error);
     });
   });
 });
@@ -125,6 +138,24 @@ describe("adjustLineHeight", () => {
     expect(adjustLineHeight(1.0, mockMetrics)).toBeCloseTo(0.895, 2);
     expect(adjustLineHeight(2.0, mockMetrics)).toBeCloseTo(1.79, 2);
   });
+
+  it("should return original value when unitsPerEm is 0", () => {
+    const invalidMetrics: FontMetrics = {
+      ascender: 1000,
+      descender: -500,
+      unitsPerEm: 0,
+    };
+    expect(adjustLineHeight(1.5, invalidMetrics)).toBe(1.5);
+  });
+
+  it("should return original value when factor is 0", () => {
+    const zeroFactorMetrics: FontMetrics = {
+      ascender: 0,
+      descender: 0,
+      unitsPerEm: 1000,
+    };
+    expect(adjustLineHeight(1.5, zeroFactorMetrics)).toBe(1.5);
+  });
 });
 
 describe("calculateVerticalAlignmentOffset", () => {
@@ -152,7 +183,8 @@ describe("calculateVerticalAlignmentOffset", () => {
     expect(offset24).toBeCloseTo(offset12 * 2, 5);
   });
 
-  it("should return 0 when metrics are balanced", () => {
+  it("should return 0 when ascender equals unitsPerEm and descender is 0", () => {
+    // When: -descender + ascender - unitsPerEm = 0 + 1000 - 1000 = 0
     const balancedMetrics: FontMetrics = {
       ascender: 1000,
       descender: 0,
@@ -161,5 +193,14 @@ describe("calculateVerticalAlignmentOffset", () => {
     const offset = calculateVerticalAlignmentOffset(24, balancedMetrics);
 
     expect(offset).toBeCloseTo(0, 5);
+  });
+
+  it("should return 0 when unitsPerEm is 0", () => {
+    const invalidMetrics: FontMetrics = {
+      ascender: 1000,
+      descender: -500,
+      unitsPerEm: 0,
+    };
+    expect(calculateVerticalAlignmentOffset(24, invalidMetrics)).toBe(0);
   });
 });
