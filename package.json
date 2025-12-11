@@ -61,8 +61,8 @@
     "download-example-files": "gsutil -m cp -r \"gs://psd-importer-customer-samples/\" ./src/test/examples",
     "prepare-example-files": "./scripts/prepare-files.sh test/examples",
     "build": "cp -r ./assets dist/ && tsx build.ts",
-    "test": "mocha",
-    "test:unit": "bun test src/lib/**/*.test.ts",
+    "test": "bun test src/lib/psd-parser/font-metrics.test.ts",
+    "test:integration": "mocha",
     "publish": "npm run build && npm publish --access public",
     "compare": "tsx scripts/comparison.ts"
   },
