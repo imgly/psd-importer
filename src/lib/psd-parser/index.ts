@@ -42,6 +42,7 @@ import {
   waitUntilBlockIsReady,
   webtoonToCesdkBlendMode,
 } from "./utils";
+import { createBufferURL } from "./buffer-url";
 
 /**
  * The pixel scale factor used in the CESDK Editor
@@ -1365,7 +1366,7 @@ export class PSDParser {
       bgColor
     );
 
-    const imageURI = URL.createObjectURL(imgBlob);
+    const imageURI = await createBufferURL(this.engine, imgBlob);
 
     const imageBlock = this.engine.block.create("//ly.img.ubq/graphic");
     const rectFrame = this.engine.block.createShape("//ly.img.ubq/shape/rect");
@@ -1499,7 +1500,7 @@ export class PSDParser {
         bgColor
       );
 
-      const imageURI = URL.createObjectURL(imgBlob);
+      const imageURI = await createBufferURL(this.engine, imgBlob);
 
       // set fill
       const fillType = this.engine.block.createFill("//ly.img.ubq/fill/image");
