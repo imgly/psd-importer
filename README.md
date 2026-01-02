@@ -218,6 +218,12 @@ List of blend modes not currently supported by the engine:
 
 ## Recent Updates
 
+### Version 0.1.0
+
+- **Added**: Support for transient resource relocation using CE.SDK native APIs
+- **Changed**: Images now use internal buffer URLs instead of blob URLs, enabling `findAllTransientResources()`, `getBufferData()`, and `relocateResource()` APIs
+- **Added**: Documentation for saving scenes with stable URLs
+
 ### Version 0.0.12
 
 - **Fixed**: Handle capacity overflow errors when processing large layer masks in files >900MB
