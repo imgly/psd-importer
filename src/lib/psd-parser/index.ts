@@ -43,6 +43,10 @@ import {
   webtoonToCesdkBlendMode,
 } from "./utils";
 import { createBufferURL } from "./buffer-url";
+import {
+  extractRotationFromTransformMatrix,
+  hasSkewTransform,
+} from "./transform";
 
 /**
  * The pixel scale factor used in the CESDK Editor
@@ -638,7 +642,7 @@ export class PSDParser {
       this.engine.block.setBlendMode(textBlock, blendMode);
     }
     // apply rotation
-    this.rotateBlock(textBlock, psdLayer);
+    this.applyRotationFromTransform(textBlock, psdLayer);
 
     // set layer position
     this.engine.block.setWidth(textBlock, width);
@@ -1399,7 +1403,7 @@ export class PSDParser {
     this.engine.block.setHeight(imageBlock, height);
 
     // apply rotation
-    this.rotateBlock(imageBlock, psdLayer);
+    this.applyRotationFromTransform(imageBlock, psdLayer);
 
     return imageBlock;
   }
@@ -1454,7 +1458,7 @@ export class PSDParser {
     this.engine.block.setHeight(graphicBlock, psdLayer.height);
 
     // apply rotation
-    this.rotateBlock(graphicBlock, psdLayer);
+    this.applyRotationFromTransform(graphicBlock, psdLayer);
 
     // append the text block to the page
     this.engine.block.insertChild(pageBlock, graphicBlock, 0);
@@ -1709,13 +1713,26 @@ export class PSDParser {
     return svgPaths.join(" ");
   }
 
-  private rotateBlock(block: number, psdLayer: Layer): void {
+  private applyRotationFromTransform(block: number, psdLayer: Layer): void {
     const TySh = psdLayer.additionalProperties.TySh;
     if (!TySh) return;
 
-    const angleRadians = -Math.atan2(TySh.transformYX, TySh.transformXX);
-    if (angleRadians) {
-      this.engine.block.setRotation(block, angleRadians);
+    const { transformXX, transformXY, transformYX, transformYY } = TySh;
+
+    const rotation = extractRotationFromTransformMatrix(
+      transformXX,
+      transformXY,
+      transformYX,
+      transformYY
+    );
+
+    if (rotation !== null) {
+      this.engine.block.setRotation(block, rotation);
+    } else if (hasSkewTransform(transformXY, transformYX)) {
+      this.logger.log(
+        `Layer '${psdLayer.name}' has a skew/shear transform which is not supported. The layer will be rendered without the skew transform.`,
+        "warning"
+      );
     }
   }
 
