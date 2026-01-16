@@ -27,6 +27,11 @@ export function extractRotationFromTransformMatrix(
     transformYY * transformYY + transformYX * transformYX
   );
 
+  // Guard against degenerate matrices (zero scale)
+  if (scaleX < 1e-10 || scaleY < 1e-10) {
+    return null;
+  }
+
   // Normalize the matrix components to remove scale
   const normalizedXX = transformXX / scaleX;
   const normalizedXY = transformXY / scaleX;

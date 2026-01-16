@@ -1730,7 +1730,7 @@ export class PSDParser {
       this.engine.block.setRotation(block, rotation);
     } else if (hasSkewTransform(transformXY, transformYX)) {
       this.logger.log(
-        `Layer '${psdLayer.name}' has a skew/shear transform which is not supported. The text will be rendered without skew.`,
+        `Layer '${psdLayer.name}' has a skew/shear transform which is not supported. The layer will be rendered without the skew transform.`,
         "warning"
       );
     }
